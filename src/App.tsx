@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbwGIbW82uBM1nL46Qhb3f296zyRCxQLrJoy6X7JXmiPjBTCiaiNGaxg9tQ1qUH1am4OAQ/exec";
+  "https://script.google.com/macros/s/AKfycbwnt1Co7hRFB2wTp6MRhNE2WX5bHuee26CMmfZeS0nMz789S1XRS6i764dqhnFKh117ag/exec";
 
 const EMPTY_DATA = {
   summary: {},
@@ -20,6 +20,7 @@ const EMPTY_DATA = {
 const PHASES = ["Build", "Accumulate", "Income"];
 const SOURCES = ["All", "Dividend", "Growth"];
 const ORDER_TABS = ["All", "BUY", "SELL"];
+const STOCK_STATUS_OPTIONS = ["EXCLUDE", "FADE IN", "FADE OUT", "OK", "WATCH"];
 const EMPTY_PORTFOLIO_ROW = {
   assetCode: "",
   symbol: "",
@@ -321,6 +322,41 @@ function App() {
     }
   };
 
+  const saveStockManualStatus = async (stock: any, manualStatus: string) => {
+    const assetCode = String(stock.assetCode || stock.symbol || "").trim().toUpperCase();
+    if (!assetCode) return;
+
+    const previousData = data;
+    const nextStockList = (data.stockList || []).map((item: any) => {
+      const itemCode = String(item.assetCode || item.symbol || "").trim().toUpperCase();
+      return itemCode === assetCode ? { ...item, manualStatus } : item;
+    });
+
+    setData({ ...data, stockList: nextStockList });
+
+    try {
+      setSaving(true);
+      setError("");
+      const res = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "updateStockManualStatus",
+          assetCode,
+          manualStatus,
+        }),
+      });
+      const result = await res.json();
+      if (!result.success && result.status !== "success") throw new Error(result.message || "Save stock status failed");
+      await loadData();
+    } catch (err: any) {
+      setData(previousData);
+      setError(err.message || "Save stock status failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const logOrder = async (order: any) => {
     try {
       setSaving(true);
@@ -483,21 +519,50 @@ function App() {
                 {SOURCES.map((item) => <option key={item}>{item}</option>)}
               </select>
               <select value={stockStatus} onChange={(e) => setStockStatus(e.target.value)}>
-                {["All", "OK", "FADE IN", "FADE OUT"].map((item) => <option key={item}>{item}</option>)}
+                {["All", ...STOCK_STATUS_OPTIONS].map((item) => <option key={item}>{item}</option>)}
               </select>
             </div>
-            <Table
-              columns={["SYMBOL", "SOURCE", "SECTOR", "LEADER", "UNIVERSE NOTE", "STATUS", "TARGET WT"]}
-              rows={filteredStocks.map((s: any) => [
-                <b>{s.symbol || s.assetCode}</b>,
-                <Badge value={s.source || s.type} />,
-                s.sector || "-",
-                <span className={clsFor(s.leaderFlag)}>{s.leaderFlag || "-"}</span>,
-                s.universeNote || "-",
-                <span className={clsFor(s.manualStatus)}>{s.manualStatus || "-"}</span>,
-                percent(s.targetWeight),
-              ])}
-            />
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>SYMBOL</th>
+                    <th>SOURCE</th>
+                    <th>SECTOR</th>
+                    <th>LEADER</th>
+                    <th>UNIVERSE NOTE</th>
+                    <th>STATUS</th>
+                    <th>TARGET WT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredStocks.length === 0 ? (
+                    <tr><td colSpan={7}><Empty text="No stock list rows" /></td></tr>
+                  ) : filteredStocks.map((s: any) => (
+                    <tr key={s.symbol || s.assetCode}>
+                      <td><b>{s.symbol || s.assetCode}</b></td>
+                      <td><Badge value={s.source || s.type} /></td>
+                      <td>{s.sector || "-"}</td>
+                      <td><span className={clsFor(s.leaderFlag)}>{s.leaderFlag || "-"}</span></td>
+                      <td>{s.universeNote || "-"}</td>
+                      <td>
+                        <select
+                          className={`status-select ${clsFor(s.manualStatus)}`}
+                          value={String(s.manualStatus || "OK").toUpperCase()}
+                          disabled={saving}
+                          onChange={(e) => saveStockManualStatus(s, e.target.value)}
+                        >
+                          {STOCK_STATUS_OPTIONS.map((status) => (
+                            <option key={status} value={status}>{status}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>{percent(s.targetWeight)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Panel>
         )}
 
@@ -716,7 +781,7 @@ function Field({ label, value, onChange }: any) {
 }
 
 const styles = `
-*{box-sizing:border-box}body{margin:0;background:#03070d;color:#e8f1ff;font-family:Inter,Segoe UI,Arial,sans-serif}.terminal-app{min-height:100vh;background:radial-gradient(circle at top left,#10284a 0,#06101d 32%,#02060b 100%)}.topbar{height:88px;display:flex;align-items:center;gap:16px;padding:0 34px;border-bottom:1px solid #15253b;background:#07111f}.brand-mark{width:50px;height:50px;border-radius:8px;background:linear-gradient(135deg,#2b83ff,#20d6a2);display:grid;place-items:center;font-weight:900;color:#fff;box-shadow:0 0 28px rgba(43,131,255,.25)}.brand{min-width:210px}.brand-title{font-size:22px;font-weight:900;letter-spacing:-.02em}.brand-sub{font-family:Consolas,monospace;color:#6d8db8;font-size:12px;margin-top:4px}.tabs{flex:1;display:flex;justify-content:center;gap:8px}.tab,.sync,.chip,.mini,.primary{border:1px solid #1b3353;background:#09182a;color:#96b1d4;border-radius:6px;padding:10px 14px;font-weight:800;cursor:pointer}.tab.active,.chip.active,.primary{background:#163c6e;color:#fff;border-color:#2b83ff}.sync{margin-left:auto}.shell{padding:30px 34px 70px;display:flex;flex-direction:column;gap:20px}.alert{padding:14px 18px;border:1px solid #7f1d1d;background:#2a0d12;color:#ffb4b4;border-radius:6px;font-weight:800}.market-strip{display:flex;align-items:center;gap:22px;border:1px solid #2f4058;background:#081423;border-radius:6px;padding:14px 18px;color:#94afd3;font-family:Consolas,monospace}.market-strip b{color:#fff}.dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:10px;box-shadow:0 0 15px currentColor}.red{color:#ff4d6d}.green,.good{color:#20d6a2}.bad{color:#ff4d6d}.amber{color:#ffb020}.gold{color:#ffd166}.muted{color:#8095b5}.blue{color:#5aa2ff}.violet{color:#a78bfa}.cards{display:grid;gap:16px}.cards.six{grid-template-columns:repeat(6,minmax(0,1fr))}.cards.four{grid-template-columns:repeat(4,minmax(0,1fr))}.metric{min-height:150px;border:1px solid #173151;background:linear-gradient(180deg,#091827,#06101c);border-radius:8px;padding:20px 24px;border-top:2px solid currentColor}.metric-title{font-size:13px;letter-spacing:.16em;font-weight:900;color:#d9e8ff}.metric-value{font-family:Consolas,monospace;font-size:25px;line-height:1.2;margin:16px 0 8px;font-weight:900}.metric-sub{font-size:14px;color:#88a6cc;line-height:1.45}.grid{display:grid;gap:20px}.grid.two{grid-template-columns:1fr 1fr}.panel{border:1px solid #173151;background:#06101c;border-radius:8px;overflow:hidden}.panel-title{padding:18px 26px;border-bottom:1px solid #142840;font-size:13px;letter-spacing:.18em;text-transform:uppercase;font-weight:900;color:#bed4f5}.allocation{padding:18px 26px}.row{display:flex;justify-content:space-between;align-items:center;gap:14px;font-weight:800}.row i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:10px}.row.small{font-size:12px;color:#7894ba;margin-top:7px}.allocation-track{height:8px;background:#152740;border-radius:999px;margin:10px 0;position:relative}.allocation-track div{height:100%;border-radius:999px}.allocation-track em{position:absolute;top:-4px;width:2px;height:16px;background:#fff;opacity:.8}.bars{padding:18px 26px;display:flex;flex-direction:column;gap:13px}.barrow{display:grid;grid-template-columns:70px 1fr 80px;gap:12px;align-items:center;font-family:Consolas,monospace}.track{height:8px;background:#14243a;border-radius:999px;overflow:hidden}.track i{display:block;height:100%;border-radius:999px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:840px}th,td{padding:13px 18px;border-bottom:1px solid #12243a;text-align:left;white-space:nowrap}th{font-size:12px;letter-spacing:.14em;color:#d9e8ff;background:#050c16;position:sticky;top:0}td{font-family:Consolas,monospace;color:#d8e6fa;font-size:13px}tr:hover td{background:#091827}.badge{display:inline-flex;align-items:center;justify-content:center;min-width:74px;border-radius:999px;padding:4px 9px;font-family:Inter,Arial,sans-serif;font-size:11px;font-weight:900}.badge.dividend{background:#063b2c;color:#20d6a2}.badge.growth{background:#0b2a55;color:#5aa2ff}.badge.other{background:#263247;color:#aebdd4}.toolbar{display:flex;gap:10px;padding:16px 18px;border-bottom:1px solid #13263d;align-items:center;flex-wrap:wrap}.toolbar input,.toolbar select,.field input,.field select{height:40px;border:1px solid #1c385a;background:#071321;color:#e8f1ff;border-radius:6px;padding:0 12px;outline:none}.toolbar input{min-width:280px}.mini{padding:7px 10px;font-size:12px}.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;padding:22px}.field{display:flex;flex-direction:column;gap:8px}.field span{font-size:12px;letter-spacing:.14em;color:#8ea8cc;text-transform:uppercase;font-weight:900}.actions{padding:0 22px 22px}.primary{min-width:150px}.empty{padding:28px;color:#637d9e;text-align:center;font-family:Inter,Arial,sans-serif}.trade-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) 170px;gap:16px;padding:22px;align-items:end}.trade-save{height:40px}.settings-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:20px}.portfolio-head{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:16px 22px;border-bottom:1px solid #13263d}.help-text{color:#7894ba;font-size:13px;line-height:1.45}.portfolio-actions{display:flex;gap:10px;align-items:center}.edit-table{min-width:900px}.cell-input{width:100%;height:34px;border:1px solid transparent;background:transparent;color:#e8f1ff;border-radius:6px;padding:0 10px;font-family:Consolas,monospace;font-weight:800;outline:none}.cell-input:focus{border-color:#2b83ff;background:#071a2f}.symbol-input{text-transform:uppercase}.number-input{text-align:right}.ghost{width:30px;height:30px;border:1px solid #1b3353;background:#071321;color:#6d8db8;border-radius:6px;cursor:pointer;font-size:20px;line-height:1}.ghost:hover{color:#ff4d6d;border-color:#7f1d1d}.side-stack{display:flex;flex-direction:column;gap:20px}.coverage-grid{display:grid;grid-template-columns:1fr;gap:12px;padding:18px}.coverage-card{border:1px solid currentColor;border-radius:8px;padding:14px;background:#071321}.coverage-card div{font-weight:900;color:#d9e8ff}.coverage-card b{display:block;font-family:Consolas,monospace;font-size:26px;margin:12px 0}.coverage-card span{display:block;color:#7894ba;font-size:12px;margin-top:8px}.mini-track{height:8px;background:#152740;border-radius:999px;overflow:hidden}.mini-track i{display:block;height:100%;background:currentColor;border-radius:999px}.phase-stack{display:flex;flex-direction:column;gap:12px;padding:18px}.phase-card{text-align:left;border:1px solid #1b3353;background:#071321;color:#d9e8ff;border-radius:8px;padding:14px;cursor:pointer;display:grid;grid-template-columns:1fr 1fr;gap:8px}.phase-card b{grid-column:1/-1}.phase-card span{font-family:Consolas,monospace;color:#8ea8cc}.phase-card.active{border-color:#2b83ff;background:#0b2240}
+*{box-sizing:border-box}body{margin:0;background:#03070d;color:#e8f1ff;font-family:Inter,Segoe UI,Arial,sans-serif}.terminal-app{min-height:100vh;background:radial-gradient(circle at top left,#10284a 0,#06101d 32%,#02060b 100%)}.topbar{height:88px;display:flex;align-items:center;gap:16px;padding:0 34px;border-bottom:1px solid #15253b;background:#07111f}.brand-mark{width:50px;height:50px;border-radius:8px;background:linear-gradient(135deg,#2b83ff,#20d6a2);display:grid;place-items:center;font-weight:900;color:#fff;box-shadow:0 0 28px rgba(43,131,255,.25)}.brand{min-width:210px}.brand-title{font-size:22px;font-weight:900;letter-spacing:-.02em}.brand-sub{font-family:Consolas,monospace;color:#6d8db8;font-size:12px;margin-top:4px}.tabs{flex:1;display:flex;justify-content:center;gap:8px}.tab,.sync,.chip,.mini,.primary{border:1px solid #1b3353;background:#09182a;color:#96b1d4;border-radius:6px;padding:10px 14px;font-weight:800;cursor:pointer}.tab.active,.chip.active,.primary{background:#163c6e;color:#fff;border-color:#2b83ff}.sync{margin-left:auto}.shell{padding:30px 34px 70px;display:flex;flex-direction:column;gap:20px}.alert{padding:14px 18px;border:1px solid #7f1d1d;background:#2a0d12;color:#ffb4b4;border-radius:6px;font-weight:800}.market-strip{display:flex;align-items:center;gap:22px;border:1px solid #2f4058;background:#081423;border-radius:6px;padding:14px 18px;color:#94afd3;font-family:Consolas,monospace}.market-strip b{color:#fff}.dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:10px;box-shadow:0 0 15px currentColor}.red{color:#ff4d6d}.green,.good{color:#20d6a2}.bad{color:#ff4d6d}.amber{color:#ffb020}.gold{color:#ffd166}.muted{color:#8095b5}.blue{color:#5aa2ff}.violet{color:#a78bfa}.cards{display:grid;gap:16px}.cards.six{grid-template-columns:repeat(6,minmax(0,1fr))}.cards.four{grid-template-columns:repeat(4,minmax(0,1fr))}.metric{min-height:150px;border:1px solid #173151;background:linear-gradient(180deg,#091827,#06101c);border-radius:8px;padding:20px 24px;border-top:2px solid currentColor}.metric-title{font-size:13px;letter-spacing:.16em;font-weight:900;color:#d9e8ff}.metric-value{font-family:Consolas,monospace;font-size:25px;line-height:1.2;margin:16px 0 8px;font-weight:900}.metric-sub{font-size:14px;color:#88a6cc;line-height:1.45}.grid{display:grid;gap:20px}.grid.two{grid-template-columns:1fr 1fr}.panel{border:1px solid #173151;background:#06101c;border-radius:8px;overflow:hidden}.panel-title{padding:18px 26px;border-bottom:1px solid #142840;font-size:13px;letter-spacing:.18em;text-transform:uppercase;font-weight:900;color:#bed4f5}.allocation{padding:18px 26px}.row{display:flex;justify-content:space-between;align-items:center;gap:14px;font-weight:800}.row i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:10px}.row.small{font-size:12px;color:#7894ba;margin-top:7px}.allocation-track{height:8px;background:#152740;border-radius:999px;margin:10px 0;position:relative}.allocation-track div{height:100%;border-radius:999px}.allocation-track em{position:absolute;top:-4px;width:2px;height:16px;background:#fff;opacity:.8}.bars{padding:18px 26px;display:flex;flex-direction:column;gap:13px}.barrow{display:grid;grid-template-columns:70px 1fr 80px;gap:12px;align-items:center;font-family:Consolas,monospace}.track{height:8px;background:#14243a;border-radius:999px;overflow:hidden}.track i{display:block;height:100%;border-radius:999px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:840px}th,td{padding:13px 18px;border-bottom:1px solid #12243a;text-align:left;white-space:nowrap}th{font-size:12px;letter-spacing:.14em;color:#d9e8ff;background:#050c16;position:sticky;top:0}td{font-family:Consolas,monospace;color:#d8e6fa;font-size:13px}tr:hover td{background:#091827}.badge{display:inline-flex;align-items:center;justify-content:center;min-width:74px;border-radius:999px;padding:4px 9px;font-family:Inter,Arial,sans-serif;font-size:11px;font-weight:900}.badge.dividend{background:#063b2c;color:#20d6a2}.badge.growth{background:#0b2a55;color:#5aa2ff}.badge.other{background:#263247;color:#aebdd4}.toolbar{display:flex;gap:10px;padding:16px 18px;border-bottom:1px solid #13263d;align-items:center;flex-wrap:wrap}.toolbar input,.toolbar select,.field input,.field select{height:40px;border:1px solid #1c385a;background:#071321;color:#e8f1ff;border-radius:6px;padding:0 12px;outline:none}.toolbar input{min-width:280px}.mini{padding:7px 10px;font-size:12px}.status-select{height:34px;min-width:128px;border:1px solid #1c385a;background:#071321;border-radius:999px;padding:0 12px;font-family:Consolas,monospace;font-weight:900;outline:none}.status-select.good{border-color:#0d6d52;background:#06291f;color:#20d6a2}.status-select.bad{border-color:#7f1d1d;background:#2a0d12;color:#ff8aa0}.status-select.muted{color:#9db2cf}.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;padding:22px}.field{display:flex;flex-direction:column;gap:8px}.field span{font-size:12px;letter-spacing:.14em;color:#8ea8cc;text-transform:uppercase;font-weight:900}.actions{padding:0 22px 22px}.primary{min-width:150px}.empty{padding:28px;color:#637d9e;text-align:center;font-family:Inter,Arial,sans-serif}.trade-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) 170px;gap:16px;padding:22px;align-items:end}.trade-save{height:40px}.settings-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:20px}.portfolio-head{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:16px 22px;border-bottom:1px solid #13263d}.help-text{color:#7894ba;font-size:13px;line-height:1.45}.portfolio-actions{display:flex;gap:10px;align-items:center}.edit-table{min-width:900px}.cell-input{width:100%;height:34px;border:1px solid transparent;background:transparent;color:#e8f1ff;border-radius:6px;padding:0 10px;font-family:Consolas,monospace;font-weight:800;outline:none}.cell-input:focus{border-color:#2b83ff;background:#071a2f}.symbol-input{text-transform:uppercase}.number-input{text-align:right}.ghost{width:30px;height:30px;border:1px solid #1b3353;background:#071321;color:#6d8db8;border-radius:6px;cursor:pointer;font-size:20px;line-height:1}.ghost:hover{color:#ff4d6d;border-color:#7f1d1d}.side-stack{display:flex;flex-direction:column;gap:20px}.coverage-grid{display:grid;grid-template-columns:1fr;gap:12px;padding:18px}.coverage-card{border:1px solid currentColor;border-radius:8px;padding:14px;background:#071321}.coverage-card div{font-weight:900;color:#d9e8ff}.coverage-card b{display:block;font-family:Consolas,monospace;font-size:26px;margin:12px 0}.coverage-card span{display:block;color:#7894ba;font-size:12px;margin-top:8px}.mini-track{height:8px;background:#152740;border-radius:999px;overflow:hidden}.mini-track i{display:block;height:100%;background:currentColor;border-radius:999px}.phase-stack{display:flex;flex-direction:column;gap:12px;padding:18px}.phase-card{text-align:left;border:1px solid #1b3353;background:#071321;color:#d9e8ff;border-radius:8px;padding:14px;cursor:pointer;display:grid;grid-template-columns:1fr 1fr;gap:8px}.phase-card b{grid-column:1/-1}.phase-card span{font-family:Consolas,monospace;color:#8ea8cc}.phase-card.active{border-color:#2b83ff;background:#0b2240}
 @media(max-width:1200px){.cards.six{grid-template-columns:repeat(3,1fr)}.grid.two,.settings-grid,.trade-grid{grid-template-columns:1fr}.tabs{justify-content:flex-start;overflow:auto}.topbar{padding:0 18px}.brand{min-width:auto}}@media(max-width:760px){.topbar{height:auto;align-items:flex-start;flex-direction:column;padding:18px}.tabs{width:100%;justify-content:flex-start}.shell{padding:18px}.cards.six,.cards.four,.form-grid{grid-template-columns:1fr}.market-strip,.portfolio-head{align-items:flex-start;flex-direction:column}.toolbar input{min-width:100%;width:100%}.portfolio-actions{width:100%;flex-direction:column}.portfolio-actions button,.trade-save{width:100%}}
 `;
 
