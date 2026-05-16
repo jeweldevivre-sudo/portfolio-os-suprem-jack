@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbx954UIlvG-ox64w1zEHpxQhWqzl0IYgSuw4krXXNvgpcbCnJFPN6DPPx__wJcXSbNK8A/exec";
+  "https://script.google.com/macros/s/AKfycbzLX8bXovMJ97On67ygX1NLKGwvuAM1_uyEA0lI3cjkKGqtMAIBMePCA-RCxIpLrYskHQ/exec";
 
 const EMPTY_DATA = {
   summary: {},
@@ -17,7 +17,7 @@ const EMPTY_DATA = {
   decisionAnalytics: { trend: [], status: [] },
 };
 
-const PHASES = ["Build", "Accumulate", "Income"];
+const PHASES = ["BUILD", "BALANCE", "INCOME"];
 const SOURCES = ["All", "Dividend", "Growth"];
 const ORDER_TABS = ["All", "BUY", "SELL"];
 const STOCK_STATUS_OPTIONS = ["EXCLUDE", "FADE IN", "FADE OUT", "OK", "WATCH"];
@@ -118,7 +118,7 @@ function App() {
   });
   const [settings, setSettings] = useState({
     portfolioName: "",
-    phase: "Build",
+    phase: "BUILD",
     lineAvailable: "",
     totalWealth: "",
   });
@@ -140,7 +140,7 @@ function App() {
       setLastSync(new Date().toLocaleString("th-TH"));
       setSettings({
         portfolioName: next.summary?.portfolioName || "",
-        phase: next.summary?.phase || next.summary?.portfolioPhase || "Build",
+        phase: String(next.summary?.phase || next.summary?.portfolioPhase || "BUILD").toUpperCase().replace("ACCUMULATE", "BALANCE"),
         lineAvailable: String(next.summary?.lineAvailable ?? ""),
         totalWealth: String(next.targets?.totalWealth ?? ""),
       });
@@ -174,16 +174,7 @@ function App() {
           value,
           costValue,
           gl,
-          // Keep API OUTPUT P/L Percent as-is. Do not pass it through percent(),
-          // because values like -0.71 already mean -0.71%, not -70.71%.
-          glPct:
-            h.unrealizedPLPercent !== undefined && h.unrealizedPLPercent !== ""
-              ? n(h.unrealizedPLPercent)
-              : h.glPct !== undefined && h.glPct !== ""
-                ? n(h.glPct)
-                : costValue > 0
-                  ? (gl / costValue) * 100
-                  : 0,
+          glPct: costValue > 0 ? (gl / costValue) * 100 : pct(h.glPct ?? h.unrealizedPLPercent),
         };
       }),
     [data.holdings]
@@ -522,7 +513,7 @@ function App() {
               <Metric title="UNREALIZED P/L" value={`${totalPL >= 0 ? "+" : ""}${baht(totalPL)}`} sub={`${totalPLPct >= 0 ? "+" : ""}${percent(totalPLPct)} vs cost`} color={totalPL >= 0 ? "green" : "red"} />
               <Metric title="DIVIDEND VALUE" value={baht(dividendValue)} sub={`${percent(dividendWeight)} / Target ${percent(targetDividend, 0)}`} color="green" />
               <Metric title="GROWTH VALUE" value={baht(growthValue)} sub={`${percent(growthWeight)} / Target ${percent(targetGrowth, 0)}`} color="blue" />
-              <Metric title="PORTFOLIO NAME" value={summary.portfolioName || "-"} sub={`Phase ${summary.phase || "Build"}`} color="violet" />
+              <Metric title="PORTFOLIO NAME" value={summary.portfolioName || "-"} sub={`Phase ${String(summary.phase || "BUILD").toUpperCase().replace("ACCUMULATE", "BALANCE")}`} color="violet" />
               <Metric title="LINE AVAILABLE" value={baht(cash)} sub={`Cash ready ${baht(cash)}`} color="amber" />
             </div>
 
@@ -543,7 +534,7 @@ function App() {
                     <div className="barrow" key={h.symbol}>
                       <span>{h.symbol}</span>
                       <div className="track"><i style={{ width: `${Math.min(Math.abs(h.glPct), 40) * 2.5}%`, background: h.gl >= 0 ? "#20d6a2" : "#ff4d6d" }} /></div>
-                      <b className={h.gl >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{fmt(h.glPct)}%</b>
+                      <b className={h.gl >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{percent(h.glPct)}</b>
                     </div>
                   ))}
                   {holdings.length === 0 && <Empty text="No portfolio rows from API OUT" />}
@@ -562,7 +553,7 @@ function App() {
                   baht(h.price),
                   baht(h.value),
                   <span className={h.gl >= 0 ? "good" : "bad"}>{h.gl >= 0 ? "+" : ""}{baht(h.gl)}</span>,
-                  <span className={h.glPct >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{fmt(h.glPct)}%</span>,
+                  <span className={h.glPct >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{percent(h.glPct)}</span>,
                 ])}
               />
             </Panel>
@@ -695,7 +686,7 @@ function App() {
                 <label className="field">
                   <span>Phase</span>
                   <select value={settings.phase} onChange={(e) => setSettings({ ...settings, phase: e.target.value })}>
-                    {PHASES.map((item) => <option key={item}>{item}</option>)}
+                    {PHASES.map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </label>
                 <Field label="Line Available" value={settings.lineAvailable} onChange={(v) => setSettings({ ...settings, lineAvailable: v })} />
@@ -790,9 +781,9 @@ function App() {
                 <Panel title="Phase Controls">
                   <div className="phase-stack">
                     {[
-                      ["Build", 40, 60],
-                      ["Accumulate", 50, 50],
-                      ["Income", 70, 30],
+                      ["BUILD", 40, 60],
+                      ["BALANCE", 50, 50],
+                      ["INCOME", 70, 30],
                     ].map(([name, div, growth]) => (
                       <button
                         key={name}
