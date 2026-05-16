@@ -22,7 +22,7 @@ import {
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbxYXPMAZl5CxhCCDNC6ehNvfegBPqLLXoAS05px51B_ej9Pr1uwxRLxyq0iFKeR9r0BXg/exec";
+  "https://script.google.com/macros/s/AKfycbyXCyCaD7qHNj5M8H861aRqWlCgYm6RTQ6RiJuv48kSz5kuObMP8cpvsTaC2C35HJWVDw/exec";
 
 const DEFAULT_TARGETS = {
   totalWealth: 5000000,
