@@ -1,721 +1,481 @@
 // @ts-nocheck
 import { useEffect, useMemo, useState } from "react";
-import {
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip as RechartsTooltip,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  LineChart,
-  Line,
-  RadarChart,
-  Radar,
-  PolarGrid,
-  PolarAngleAxis,
-} from "recharts";
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyDsuHcsmeQEfse_3uQPqWHOOO0pKbr8wL4nGfaJnJUrcuzs1HqFGXliC_5mbPQ4poXJQ/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwt3FAkuwjCkR7NCvt83G_PeX-rhOfEQtbrBFqlSs3rQ02TVpHwZe8HZhNK-V6lDMfvtg/exec";
 
-const COLORS = ["#f6b100", "#2f80ed", "#27ae60", "#eb5757", "#9b51e0", "#56ccf2"];
+type AnyRow = Record<string, any>;
 
-const fmt = (value: any, digits = 2) => {
-  const n = Number(value);
-  if (value === "" || value === null || value === undefined || Number.isNaN(n)) return "—";
-  return n.toLocaleString("en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
-};
+const tabs = [
+  ["dashboard", "Dashboard"],
+  ["orders", "Orders"],
+  ["portfolio", "Portfolio"],
+  ["stockList", "Stock List"],
+  ["progress", "Progress"],
+  ["settings", "Settings"],
+];
 
-const fmt0 = (value: any) => fmt(value, 0);
-const pct = (value: any, digits = 2) => {
-  const n = Number(value);
-  if (value === "" || value === null || value === undefined || Number.isNaN(n)) return "—";
-  return `${fmt(n * (Math.abs(n) <= 1 ? 100 : 1), digits)}%`;
-};
-
-const money = (value: any, digits = 0) => {
-  const n = Number(value);
-  if (value === "" || value === null || value === undefined || Number.isNaN(n)) return "—";
-  return `฿${fmt(n, digits)}`;
-};
-
-const cleanText = (v: any, fallback = "—") => {
-  const t = String(v ?? "").trim();
-  return t || fallback;
-};
+const phaseOptions = ["BUILD", "BALANCE", "INCOME"];
 
 const toNum = (v: any) => {
   if (typeof v === "number") return v;
-  const n = Number(String(v ?? "").replace(/[,%฿,\s]/g, ""));
+  const n = Number(String(v ?? "").replace(/[,%฿\s]/g, ""));
   return Number.isFinite(n) ? n : 0;
 };
 
-const apiData = (raw: any) => raw?.data || raw || {};
-
-const normalizePhase = (v: any) => {
-  const t = String(v ?? "").trim().toUpperCase();
-  if (["BUILD", "BALANCE", "INCOME"].includes(t)) return t;
-  if (t.includes("ACC")) return "BALANCE";
-  if (t.includes("LOCK")) return "INCOME";
-  return "BUILD";
+const text = (v: any, fallback = "—") => {
+  const s = String(v ?? "").trim();
+  return s || fallback;
 };
 
-const phaseLabel = (v: any) => {
-  const p = normalizePhase(v);
-  if (p === "BUILD") return "Build";
-  if (p === "BALANCE") return "Balance";
-  return "Income";
+const money = (v: any, digits = 0) => {
+  const n = toNum(v);
+  if (v === "" || v === null || v === undefined || Number.isNaN(n)) return "—";
+  return "฿" + n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 };
 
-const getAsset = (row: any) => cleanText(row?.assetCode || row?.symbol, "");
-const getAction = (row: any) => String(row?.actionType || row?.action || "").toUpperCase();
-const getSource = (row: any) => cleanText(row?.source || row?.type, "");
-const getPrice = (row: any) => toNum(row?.marketPrice ?? row?.price ?? row?.suggestedPrice);
-const getUnits = (row: any) => toNum(row?.suggestedUnits ?? row?.units ?? row?.buyUnits ?? row?.sellUnits);
-const getValue = (row: any) => toNum(row?.suggestedValue ?? row?.suggestedBuy ?? row?.suggestedSell ?? row?.actualBuyValue ?? row?.actualSellValue);
+const num = (v: any, digits = 2) => {
+  const n = toNum(v);
+  if (v === "" || v === null || v === undefined || Number.isNaN(n)) return "—";
+  return n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+};
 
-const emptyHolding = { assetCode: "", units: "", avgCost: "" };
+const pct = (v: any, digits = 2) => {
+  const n = toNum(v);
+  if (v === "" || v === null || v === undefined || Number.isNaN(n)) return "—";
+  const value = Math.abs(n) <= 1 ? n * 100 : n;
+  return value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) + "%";
+};
+
+const getData = (raw: any) => raw?.data || raw || {};
+const getAsset = (r: AnyRow) => text(r.assetCode || r.symbol, "");
+const getAction = (r: AnyRow) => String(r.actionType || r.action || "").toUpperCase();
+const getSource = (r: AnyRow) => text(r.source || r.type, "");
+const getStatus = (r: AnyRow) => text(r.holdingStatus || r.manualStatus || r.lifecycleStatus || r.stockListStatus, "");
+
+const normalizeArray = (v: any) => Array.isArray(v) ? v : [];
+
+const styles: Record<string, React.CSSProperties> = {
+  app: {
+    minHeight: "100vh",
+    background: "radial-gradient(circle at top left, #101a2b 0, #05070b 42%, #030407 100%)",
+    color: "#f8fafc",
+    fontFamily: "'Inter', 'Arial', sans-serif",
+    padding: 18,
+  },
+  shell: { maxWidth: 1880, margin: "0 auto" },
+  header: {
+    border: "1px solid #20304a",
+    background: "linear-gradient(180deg, #101827, #0a101b)",
+    borderRadius: 18,
+    padding: "22px 24px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    boxShadow: "0 16px 40px rgba(0,0,0,.35)",
+  },
+  brand: { color: "#f6b100", fontWeight: 900, letterSpacing: 5, fontSize: 14 },
+  h1: { margin: "12px 0 0", fontSize: 28, lineHeight: 1.15, fontWeight: 900 },
+  live: { display: "flex", alignItems: "center", gap: 14, color: "#9db7d9", fontSize: 13 },
+  dot: { width: 10, height: 10, borderRadius: 99, background: "#20c878", boxShadow: "0 0 16px #20c878" },
+  nav: { display: "flex", gap: 10, flexWrap: "wrap", margin: "18px 0" },
+  navBtn: {
+    border: "1px solid #20304a",
+    background: "#0d1524",
+    color: "#9db7d9",
+    padding: "13px 20px",
+    borderRadius: 12,
+    fontWeight: 900,
+    cursor: "pointer",
+    fontSize: 15,
+  },
+  navActive: { background: "#f6b100", color: "#030407", borderColor: "#f6b100" },
+  card: {
+    border: "1px solid #20304a",
+    background: "rgba(9,16,27,.94)",
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 18,
+  },
+  row: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 },
+  grid2: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 18 },
+  title: { fontSize: 20, fontWeight: 900, margin: 0 },
+  sub: { color: "#9db7d9", fontSize: 13 },
+  line: { height: 1, background: "#20304a", margin: "14px 0 18px" },
+  kpi: { border: "1px solid #20304a", borderLeft: "3px solid #f6b100", background: "#0d1524", borderRadius: 12, padding: 16 },
+  kpiLabel: { color: "#9db7d9", fontSize: 12, textTransform: "uppercase", letterSpacing: .7 },
+  kpiValue: { fontSize: 28, fontWeight: 900, marginTop: 10 },
+  badge: { display: "inline-flex", border: "1px solid rgba(246,177,0,.5)", color: "#f6b100", borderRadius: 99, padding: "6px 10px", fontSize: 11, fontWeight: 900, background: "rgba(246,177,0,.12)" },
+  tableWrap: { overflowX: "auto" },
+  table: { width: "100%", borderCollapse: "separate", borderSpacing: "0 8px", minWidth: 900 },
+  th: { textAlign: "left", color: "#f6b100", fontSize: 12, padding: "11px 12px", textTransform: "uppercase", background: "#0d1524" },
+  td: { padding: "12px", background: "#08111d", borderTop: "1px solid #17263e", borderBottom: "1px solid #17263e", fontSize: 13 },
+  input: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #20304a",
+    background: "#060b13",
+    color: "#f8fafc",
+    borderRadius: 10,
+    padding: "12px",
+    fontSize: 14,
+    outline: "none",
+  },
+  btn: {
+    border: "1px solid #f6b100",
+    background: "#f6b100",
+    color: "#030407",
+    padding: "12px 18px",
+    borderRadius: 12,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  btnDark: {
+    border: "1px solid #20304a",
+    background: "#0d1524",
+    color: "#f8fafc",
+    padding: "12px 18px",
+    borderRadius: 12,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  error: {
+    border: "1px solid #e5484d",
+    background: "rgba(126, 19, 38, .55)",
+    color: "#ffd4d6",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  ok: {
+    border: "1px solid #20c878",
+    background: "rgba(32,200,120,.12)",
+    color: "#bfffe0",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  }
+};
 
 function App() {
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [active, setActive] = useState("dashboard");
   const [raw, setRaw] = useState<any>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [portfolioDraft, setPortfolioDraft] = useState<any[]>([]);
+  const [settings, setSettings] = useState({ portfolioName: "", lineAvailable: "", selectedPhase: "BUILD" });
 
-  const [portfolioName, setPortfolioName] = useState("");
-  const [lineAvailable, setLineAvailable] = useState("");
-  const [phase, setPhase] = useState("BUILD");
-  const [holdings, setHoldings] = useState<any[]>([]);
-  const [stockDrafts, setStockDrafts] = useState<Record<string, any>>({});
-  const [decisionDrafts, setDecisionDrafts] = useState<Record<string, any>>({});
-
-  const data = useMemo(() => apiData(raw), [raw]);
+  const data = useMemo(() => getData(raw), [raw]);
   const system = data.system || data.summary || {};
-  const dashboard = Array.isArray(data.dashboard) ? data.dashboard : [];
-  const orders = Array.isArray(data.orders) ? data.orders : [];
-  const portfolio = Array.isArray(data.portfolio || data.holdings) ? data.portfolio || data.holdings : [];
-  const stockList = Array.isArray(data.stockList) ? data.stockList : [];
+  const dashboard = normalizeArray(data.dashboard);
+  const orders = normalizeArray(data.orders);
+  const portfolio = normalizeArray(data.portfolio || data.holdings);
+  const stockList = normalizeArray(data.stockList);
   const progress = data.progress || data.decisionAnalytics || {};
-  const targets = data.targets || {};
-  const buyOrders = Array.isArray(data.buyOrders) ? data.buyOrders : orders.filter((x) => getAction(x) === "BUY");
-  const sellOrders = Array.isArray(data.sellOrders) ? data.sellOrders : orders.filter((x) => getAction(x) === "SELL");
+  const buyOrders = normalizeArray(data.buyOrders).length ? normalizeArray(data.buyOrders) : orders.filter((r) => getAction(r) === "BUY");
+  const sellOrders = normalizeArray(data.sellOrders || data.sellAlerts).length ? normalizeArray(data.sellOrders || data.sellAlerts) : orders.filter((r) => getAction(r) === "SELL");
 
-  const post = async (payload: any) => {
-    const res = await fetch(SCRIPT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload),
-    });
-    const json = await res.json();
-    if (!json.success) throw new Error(json.message || "Save failed");
-    return json;
-  };
+  const selectedPhase = text(system.selectedPhase || system.portfolioPhase || settings.selectedPhase, "BUILD").toUpperCase();
+  const totalPortfolioVal = system.totalPortfolioVal ?? system.totalPortfolioValue ?? system.portfolioValue ?? dashboard.find((x: AnyRow) => x.cardId === "totalWealth")?.value ?? 0;
+  const lineAvailable = system.lineAvailable ?? dashboard.find((x: AnyRow) => x.cardId === "lineAvailable")?.value ?? 0;
 
-  const load = async () => {
+  const allocation = [
+    { label: "Dividend", value: toNum(system.dividendValue), weight: system.dividendWeight },
+    { label: "Growth", value: toNum(system.growthValue), weight: system.growthWeight },
+  ];
+
+  async function load() {
     try {
       setLoading(true);
       setError("");
-      const res = await fetch(`${SCRIPT_URL}?t=${Date.now()}`);
+      setToast("");
+      if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR")) throw new Error("Please paste your Apps Script /exec URL into SCRIPT_URL.");
+      const res = await fetch(`${SCRIPT_URL}?t=${Date.now()}`, { method: "GET", redirect: "follow" });
       const json = await res.json();
-      if (!json.success) throw new Error(json.message || "Load failed");
-      const d = apiData(json);
+      if (json.success === false || json.status === "error") throw new Error(json.message || json.error || "API returned error");
       setRaw(json);
-      setPortfolioName(d.system?.portfolioName || d.summary?.portfolioName || "");
-      setLineAvailable(String(d.system?.lineAvailable ?? d.summary?.lineAvailable ?? ""));
-      setPhase(normalizePhase(d.system?.selectedPhase || d.phaseControl?.portfolioPhase));
-      const pf = Array.isArray(d.portfolio || d.holdings) ? d.portfolio || d.holdings : [];
-      setHoldings(pf.map((h: any) => ({
+      const d = getData(json);
+      const s = d.system || d.summary || {};
+      const pf = normalizeArray(d.portfolio || d.holdings);
+      setSettings({
+        portfolioName: text(s.portfolioName, ""),
+        lineAvailable: String(s.lineAvailable ?? ""),
+        selectedPhase: text(s.selectedPhase || s.portfolioPhase, "BUILD").toUpperCase(),
+      });
+      setPortfolioDraft(pf.map((h: AnyRow) => ({
         assetCode: getAsset(h),
         units: h.units ?? "",
-        avgCost: h.avgCost ?? h.averageCost ?? "",
+        avgCost: h.avgCost ?? "",
       })));
     } catch (e: any) {
-      setError(e.message || String(e));
+      setError(e?.message || "Failed to fetch");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  useEffect(() => {
-    load();
-  }, []);
-
-  const showToast = (text: string) => {
-    setToast(text);
-    setTimeout(() => setToast(""), 2400);
-  };
-
-  const saveSettings = async () => {
+  async function post(payload: AnyRow) {
     try {
-      setSaving(true);
-      await post({
-        action: "saveSettings",
-        selectedPhase: phase,
-        portfolioPhase: phase,
-        lineAvailable: toNum(lineAvailable),
-        portfolioName,
+      setLoading(true);
+      setError("");
+      setToast("");
+      const res = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
       });
+      const json = await res.json();
+      if (json.success === false) throw new Error(json.message || "Save failed");
+      setToast(json.message || "Saved");
       await load();
-      showToast("Settings saved");
     } catch (e: any) {
-      setError(e.message || String(e));
+      setError(e?.message || "Save failed");
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
-  };
+  }
 
-  const savePortfolio = async () => {
-    try {
-      setSaving(true);
-      await post({
-        action: "savePortfolio",
-        portfolio: holdings
-          .filter((h) => cleanText(h.assetCode, ""))
-          .map((h) => ({
-            assetCode: String(h.assetCode).trim().toUpperCase(),
-            units: toNum(h.units),
-            avgCost: toNum(h.avgCost),
-          })),
-      });
-      await load();
-      showToast("Portfolio saved");
-    } catch (e: any) {
-      setError(e.message || String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
+  useEffect(() => { load(); }, []);
 
-  const deleteHolding = async (assetCode: string, index: number) => {
-    const next = holdings.filter((_, i) => i !== index);
-    setHoldings(next);
-    if (!assetCode) return;
-    try {
-      setSaving(true);
-      await post({ action: "deletePortfolio", assetCode });
-      await load();
-      showToast(`${assetCode} deleted`);
-    } catch (e: any) {
-      setError(e.message || String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveStockStatus = async (row: any) => {
-    const assetCode = getAsset(row);
-    const draft = stockDrafts[assetCode] || {};
-    try {
-      setSaving(true);
-      await post({
-        action: "saveStockStatus",
-        assetCode,
-        manualStatus: draft.manualStatus ?? row.manualStatus ?? row.status ?? "",
-        targetWeight: toNum(draft.targetWeight ?? row.targetWeight ?? row.targetWeightPct),
-      });
-      await load();
-      showToast(`${assetCode} updated`);
-    } catch (e: any) {
-      setError(e.message || String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const logDecision = async (row: any) => {
-    const assetCode = getAsset(row);
-    const actionType = getAction(row);
-    const draft = decisionDrafts[`${actionType}-${assetCode}`] || {};
-    const actualUnits = toNum(draft.actualUnits || getUnits(row));
-    const actualPrice = toNum(draft.actualPrice || getPrice(row));
-    try {
-      setSaving(true);
-      await post({
-        action: "logDecision",
-        source: "SYSTEM",
-        actionType,
-        assetCode,
-        suggestedUnits: getUnits(row),
-        actualUnits,
-        actualPrice,
-        marketPrice: getPrice(row),
-        price: getPrice(row),
-        note: draft.note || "Follow System",
-      });
-      await load();
-      showToast(`${actionType} ${assetCode} logged`);
-    } catch (e: any) {
-      setError(e.message || String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const cards = dashboard.length ? dashboard : [
-    { metric: "Portfolio Value", value: system.portfolioValue || system.totalValue || 0, note: "Current portfolio" },
-    { metric: "Line Available", value: system.lineAvailable || 0, note: "Buying power" },
-    { metric: "Target Goal", value: system.targetGoal || targets.totalWealth || 0, note: "Total goal" },
-  ];
-
-  const allocationData = portfolio
-    .filter((h: any) => getAsset(h))
-    .map((h: any) => ({
-      name: getAsset(h),
-      value: toNum(h.currentValue ?? h.marketValue ?? h.value ?? h.totalValue),
-      weight: toNum(h.currentWeight ?? h.weight ?? h.actualWeight),
-      type: getSource(h),
-    }))
-    .filter((x) => x.value || x.weight);
-
-  const dashboardBars = cards.map((c: any) => ({
-    name: cleanText(c.metric || c.title || c.label, "Metric"),
-    value: toNum(c.value ?? c.amount),
-  })).filter((x) => x.value);
-
-  const progressData = Object.keys(progress || {}).map((k) => ({
-    name: k,
-    value: toNum(progress[k]),
-  })).filter((x) => x.value !== 0);
-
-  const renderOrderCard = (row: any) => {
-    const asset = getAsset(row);
-    const action = getAction(row);
-    const key = `${action}-${asset}`;
-    const draft = decisionDrafts[key] || {};
-    const isSell = action === "SELL";
-    const value = getValue(row);
-    return (
-      <div className={`orderCard ${isSell ? "sell" : "buy"}`} key={key}>
-        <div className="orderTop">
-          <div>
-            <div className="ticker">{asset}</div>
-            <div className="subline">{getSource(row)} · {cleanText(row.reason || row.note, "System suggestion")}</div>
-          </div>
-          <span className={`pill ${isSell ? "danger" : "success"}`}>{action}</span>
-        </div>
-
-        <div className="miniGrid">
-          <Metric label="Suggested Units" value={fmt0(getUnits(row))} />
-          <Metric label="Market Price" value={money(getPrice(row), 2)} />
-          <Metric label="Suggested Value" value={money(value, 0)} />
-          <Metric label="Priority" value={cleanText(row.priority || row.rank || row.score, "—")} />
-        </div>
-
-        <div className="executeBox">
-          <Input
-            label="Actual Units"
-            value={draft.actualUnits ?? getUnits(row)}
-            onChange={(v) => setDecisionDrafts((p) => ({ ...p, [key]: { ...p[key], actualUnits: v } }))}
-          />
-          <Input
-            label="Actual Price"
-            value={draft.actualPrice ?? getPrice(row)}
-            onChange={(v) => setDecisionDrafts((p) => ({ ...p, [key]: { ...p[key], actualPrice: v } }))}
-          />
-          <label className="field">
-            <span>Decision Note</span>
-            <select
-              value={draft.note || "Follow System"}
-              onChange={(e) => setDecisionDrafts((p) => ({ ...p, [key]: { ...p[key], note: e.target.value } }))}
-            >
-              <option>Follow System</option>
-              <option>Partial Execute</option>
-              <option>Skip</option>
-              <option>Manual Override</option>
-            </select>
-          </label>
-          <button className="terminalBtn primary" onClick={() => logDecision(row)} disabled={saving}>
-            EXECUTE
-          </button>
-        </div>
+  const Header = () => (
+    <div style={styles.header}>
+      <div>
+        <div style={styles.brand}>PORTFOLIO OS</div>
+        <h1 style={styles.h1}>Human-Guided Portfolio Management</h1>
       </div>
+      <div style={styles.live}>
+        <span style={styles.dot} />
+        <span>LIVE</span>
+        <span>{selectedPhase}</span>
+        <button style={styles.btnDark} onClick={load}>{loading ? "LOADING" : "REFRESH"}</button>
+      </div>
+    </div>
+  );
+
+  const Nav = () => (
+    <div style={styles.nav}>
+      {tabs.map(([id, label]) => (
+        <button key={id} style={{...styles.navBtn, ...(active === id ? styles.navActive : {})}} onClick={() => setActive(id)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const Section = ({ title, badge, children }: any) => (
+    <section style={styles.card}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", gap:12}}>
+        <h2 style={styles.title}>{title}</h2>
+        {badge && <span style={styles.badge}>{badge}</span>}
+      </div>
+      <div style={styles.line} />
+      {children}
+    </section>
+  );
+
+  const Empty = ({ children }: any) => (
+    <div style={{border:"1px dashed #20304a", borderRadius:12, padding:28, color:"#9db7d9", textAlign:"center"}}>
+      {children}
+    </div>
+  );
+
+  const RowTable = ({ headers, rows, render }: any) => (
+    <div style={styles.tableWrap}>
+      <table style={styles.table}>
+        <thead><tr>{headers.map((h: string) => <th key={h} style={styles.th}>{h}</th>)}</tr></thead>
+        <tbody>{rows.map((r: AnyRow, i: number) => render(r, i))}</tbody>
+      </table>
+    </div>
+  );
+
+  const Dashboard = () => (
+    <>
+      <Section title="Market Command Center" badge="SYSTEM">
+        <div style={styles.row}>
+          <div style={styles.kpi}><div style={styles.kpiLabel}>Portfolio Value</div><div style={styles.kpiValue}>{money(totalPortfolioVal)}</div><div style={styles.sub}>Current portfolio</div></div>
+          <div style={styles.kpi}><div style={styles.kpiLabel}>Line Available</div><div style={styles.kpiValue}>{money(lineAvailable)}</div><div style={styles.sub}>Buying power</div></div>
+          <div style={styles.kpi}><div style={styles.kpiLabel}>Unrealized P/L</div><div style={styles.kpiValue}>{money(system.totalUnrealizedPL)}</div><div style={styles.sub}>{pct(system.totalPLPercent)}</div></div>
+        </div>
+      </Section>
+      <div style={styles.grid2}>
+        <Section title="Allocation" badge="WEIGHT">
+          {allocation.some(x => x.value) ? allocation.map(x => (
+            <div key={x.label} style={{marginBottom:14}}>
+              <div style={{display:"flex", justifyContent:"space-between", fontWeight:900}}>
+                <span>{x.label}</span><span>{money(x.value)} / {pct(x.weight)}</span>
+              </div>
+              <div style={{height:10, background:"#0d1524", borderRadius:99, overflow:"hidden", marginTop:8}}>
+                <div style={{height:"100%", width: `${Math.max(0, Math.min(100, Math.abs(toNum(x.weight) <= 1 ? toNum(x.weight)*100 : toNum(x.weight))))}%`, background:"#f6b100"}} />
+              </div>
+            </div>
+          )) : <Empty>No allocation data from API OUTPUT</Empty>}
+        </Section>
+        <Section title="Key Numbers" badge="API OUTPUT">
+          <RowTable
+            headers={["Metric", "Value", "Sub Label", "Type"]}
+            rows={dashboard}
+            render={(r: AnyRow, i: number) => (
+              <tr key={i}>
+                <td style={styles.td}>{text(r.label || r.cardId)}</td>
+                <td style={styles.td}>{r.type === "currency" ? money(r.value, 2) : text(r.value)}</td>
+                <td style={styles.td}>{text(r.subLabel)}</td>
+                <td style={styles.td}>{text(r.type)}</td>
+              </tr>
+            )}
+          />
+        </Section>
+      </div>
+    </>
+  );
+
+  const OrderCard = ({ r, i }: any) => {
+    const action = getAction(r);
+    return (
+      <tr key={`${action}-${getAsset(r)}-${i}`}>
+        <td style={styles.td}><span style={styles.badge}>{action}</span></td>
+        <td style={styles.td}><b>{getAsset(r)}</b><div style={styles.sub}>{getSource(r)}</div></td>
+        <td style={styles.td}>{text(r.priority)}</td>
+        <td style={styles.td}>{num(r.suggestedUnits ?? r.units, 0)}</td>
+        <td style={styles.td}>{money(r.suggestedValue ?? r.suggestedBuy ?? r.suggestedSell, 2)}</td>
+        <td style={styles.td}>{money(r.marketPrice ?? r.price, 2)}</td>
+        <td style={styles.td}>{pct(r.currentWeight)}</td>
+        <td style={styles.td}>{pct(r.targetWeight)}</td>
+        <td style={styles.td}>{pct(r.weightGap)}</td>
+        <td style={styles.td}>{text(r.reason || r.note)}</td>
+        <td style={styles.td}>
+          <button
+            style={styles.btn}
+            onClick={() => post({
+              action: "logDecision",
+              assetCode: getAsset(r),
+              actionType: action,
+              source: "SYSTEM",
+              suggestedUnits: r.suggestedUnits ?? r.units,
+              actualUnits: r.suggestedUnits ?? r.units,
+              actualPrice: r.marketPrice ?? r.price,
+              marketPrice: r.marketPrice ?? r.price,
+              note: "Follow System",
+            })}
+          >
+            LOG
+          </button>
+        </td>
+      </tr>
     );
   };
 
-  return (
-    <div className="terminal">
-      <style>{STYLES}</style>
+  const Orders = () => (
+    <Section title="Action Center" badge={`${buyOrders.length} BUY / ${sellOrders.length} SELL`}>
+      <h3 style={{color:"#f6b100", letterSpacing:2}}>BUY ORDERS</h3>
+      {buyOrders.length ? <RowTable headers={["Action", "Asset", "Priority", "Units", "Value", "Price", "Current W", "Target W", "Gap", "Reason", ""]} rows={buyOrders} render={(r: AnyRow, i: number) => <OrderCard r={r} i={i} />} /> : <Empty>No buy orders from API OUTPUT</Empty>}
+      <h3 style={{color:"#f6b100", letterSpacing:2, marginTop:24}}>SELL ALERTS</h3>
+      {sellOrders.length ? <RowTable headers={["Action", "Asset", "Priority", "Units", "Value", "Price", "Current W", "Target W", "Gap", "Reason", ""]} rows={sellOrders} render={(r: AnyRow, i: number) => <OrderCard r={r} i={i} />} /> : <Empty>No sell alerts from API OUTPUT</Empty>}
+    </Section>
+  );
 
-      <header className="topbar">
-        <div>
-          <div className="brand">PORTFOLIO OS</div>
-          <div className="headline">{cleanText(portfolioName || system.portfolioName, "Human-Guided Portfolio Management")}</div>
+  const Portfolio = () => (
+    <Section title="Master Portfolio" badge="Editable">
+      {portfolioDraft.length === 0 && <Empty>No portfolio data from API OUTPUT</Empty>}
+      {portfolioDraft.length > 0 && (
+        <div style={styles.tableWrap}>
+          <table style={styles.table}>
+            <thead><tr>{["Asset Code", "Units", "Avg Cost", "Current Value", "Weight", ""].map(h => <th style={styles.th} key={h}>{h}</th>)}</tr></thead>
+            <tbody>
+              {portfolioDraft.map((h, i) => {
+                const live = portfolio.find((p: AnyRow) => getAsset(p) === h.assetCode) || {};
+                return (
+                  <tr key={i}>
+                    <td style={styles.td}><input style={styles.input} value={h.assetCode} onChange={(e) => setPortfolioDraft(portfolioDraft.map((x, j) => j === i ? {...x, assetCode:e.target.value.toUpperCase()} : x))} /></td>
+                    <td style={styles.td}><input style={styles.input} value={h.units} onChange={(e) => setPortfolioDraft(portfolioDraft.map((x, j) => j === i ? {...x, units:e.target.value} : x))} /></td>
+                    <td style={styles.td}><input style={styles.input} value={h.avgCost} onChange={(e) => setPortfolioDraft(portfolioDraft.map((x, j) => j === i ? {...x, avgCost:e.target.value} : x))} /></td>
+                    <td style={styles.td}>{money(live.currentValue, 2)}</td>
+                    <td style={styles.td}>{pct(live.currentWeight)}</td>
+                    <td style={styles.td}><button style={styles.btnDark} onClick={() => setPortfolioDraft(portfolioDraft.filter((_, j) => j !== i))}>REMOVE</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        <div className="statusStrip">
-          <span className="liveDot" /> LIVE
-          <span>{phaseLabel(phase)}</span>
-          <button className="ghostBtn" onClick={load} disabled={loading || saving}>REFRESH</button>
-        </div>
-      </header>
-
-      <nav className="tabs">
-        {[
-          ["dashboard", "Dashboard"],
-          ["orders", "Orders"],
-          ["portfolio", "Portfolio"],
-          ["stock", "Stock List"],
-          ["progress", "Progress"],
-          ["settings", "Settings"],
-        ].map(([id, label]) => (
-          <button key={id} onClick={() => setActiveTab(id)} className={activeTab === id ? "active" : ""}>{label}</button>
-        ))}
-      </nav>
-
-      {error && <div className="alert">{error}</div>}
-      {toast && <div className="toast">{toast}</div>}
-      {loading ? (
-        <div className="loading">Loading Portfolio OS...</div>
-      ) : (
-        <main>
-          {activeTab === "dashboard" && (
-            <section className="grid">
-              <div className="panel wide">
-                <PanelTitle title="Market Command Center" tag="SYSTEM" />
-                <div className="cardGrid">
-                  {cards.map((c: any, i: number) => (
-                    <div className="statCard" key={i}>
-                      <div className="statLabel">{cleanText(c.metric || c.title || c.label, "Metric")}</div>
-                      <div className="statValue">{money(c.value ?? c.amount, 0)}</div>
-                      <div className="statNote">{cleanText(c.note || c.status || c.description, "")}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="panel">
-                <PanelTitle title="Allocation" tag="WEIGHT" />
-                <div className="chartBox">
-                  <ResponsiveContainer width="100%" height={260}>
-                    <PieChart>
-                      <Pie data={allocationData} dataKey={allocationData.some(x => x.value) ? "value" : "weight"} nameKey="name" outerRadius={92} innerRadius={48}>
-                        {allocationData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                      </Pie>
-                      <RechartsTooltip contentStyle={tooltipStyle} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="panel">
-                <PanelTitle title="Key Numbers" tag="API OUTPUT" />
-                <div className="chartBox">
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={dashboardBars}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1d2a3d" />
-                      <XAxis dataKey="name" tick={{ fill: "#8795aa", fontSize: 10 }} />
-                      <YAxis tick={{ fill: "#8795aa", fontSize: 10 }} />
-                      <RechartsTooltip contentStyle={tooltipStyle} />
-                      <Bar dataKey="value" fill="#f6b100" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {activeTab === "orders" && (
-            <section className="panel wide">
-              <PanelTitle title="Action Center" tag={`${buyOrders.length} BUY / ${sellOrders.length} SELL`} />
-              <div className="split">
-                <div>
-                  <h3 className="sectionLabel">BUY ORDERS</h3>
-                  {buyOrders.length ? buyOrders.map(renderOrderCard) : <Empty text="No buy orders from API OUTPUT" />}
-                </div>
-                <div>
-                  <h3 className="sectionLabel">SELL ALERTS</h3>
-                  {sellOrders.length ? sellOrders.map(renderOrderCard) : <Empty text="No sell alerts from API OUTPUT" />}
-                </div>
-              </div>
-            </section>
-          )}
-
-          {activeTab === "portfolio" && (
-            <section className="panel wide">
-              <PanelTitle title="Master Portfolio" tag="Editable" />
-              <div className="tableWrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Asset Code</th>
-                      <th>Units</th>
-                      <th>Avg Cost</th>
-                      <th>Current Value</th>
-                      <th>Weight</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {holdings.map((h, i) => {
-                      const live = portfolio.find((p: any) => getAsset(p) === h.assetCode) || {};
-                      return (
-                        <tr key={i}>
-                          <td><input value={h.assetCode} onChange={(e) => setHoldings((p) => p.map((x, idx) => idx === i ? { ...x, assetCode: e.target.value.toUpperCase() } : x))} /></td>
-                          <td><input value={h.units} onChange={(e) => setHoldings((p) => p.map((x, idx) => idx === i ? { ...x, units: e.target.value } : x))} /></td>
-                          <td><input value={h.avgCost} onChange={(e) => setHoldings((p) => p.map((x, idx) => idx === i ? { ...x, avgCost: e.target.value } : x))} /></td>
-                          <td>{money(live.currentValue ?? live.marketValue ?? live.value, 0)}</td>
-                          <td>{pct(live.currentWeight ?? live.weight ?? live.actualWeight, 2)}</td>
-                          <td><button className="ghostBtn dangerText" onClick={() => deleteHolding(h.assetCode, i)}>DELETE</button></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="buttonRow">
-                <button className="terminalBtn" onClick={() => setHoldings((p) => [...p, { ...emptyHolding }])}>ADD ROW</button>
-                <button className="terminalBtn primary" onClick={savePortfolio} disabled={saving}>SAVE PORTFOLIO</button>
-              </div>
-            </section>
-          )}
-
-          {activeTab === "stock" && (
-            <section className="panel wide">
-              <PanelTitle title="Stock List Control" tag="Fade In / Fade Out" />
-              <div className="tableWrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Asset</th>
-                      <th>Source</th>
-                      <th>Status</th>
-                      <th>Target Weight</th>
-                      <th>Reason / Note</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stockList.map((s: any) => {
-                      const asset = getAsset(s);
-                      const draft = stockDrafts[asset] || {};
-                      return (
-                        <tr key={asset}>
-                          <td className="tickerCell">{asset}</td>
-                          <td>{getSource(s)}</td>
-                          <td>
-                            <select
-                              value={draft.manualStatus ?? s.manualStatus ?? s.status ?? ""}
-                              onChange={(e) => setStockDrafts((p) => ({ ...p, [asset]: { ...p[asset], manualStatus: e.target.value } }))}
-                            >
-                              <option value="">Auto</option>
-                              <option value="FADE IN">FADE IN</option>
-                              <option value="HOLD">HOLD</option>
-                              <option value="FADE OUT">FADE OUT</option>
-                              <option value="EXIT">EXIT</option>
-                            </select>
-                          </td>
-                          <td>
-                            <input
-                              value={draft.targetWeight ?? s.targetWeight ?? s.targetWeightPct ?? ""}
-                              onChange={(e) => setStockDrafts((p) => ({ ...p, [asset]: { ...p[asset], targetWeight: e.target.value } }))}
-                            />
-                          </td>
-                          <td>{cleanText(s.reason || s.note || s.actionNote, "")}</td>
-                          <td><button className="terminalBtn" onClick={() => saveStockStatus(s)} disabled={saving}>SAVE</button></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
-
-          {activeTab === "progress" && (
-            <section className="grid">
-              <div className="panel wide">
-                <PanelTitle title="Decision Analytics" tag="PROGRESS" />
-                <div className="cardGrid">
-                  {Object.keys(progress).length ? Object.entries(progress).map(([k, v]) => (
-                    <div className="statCard" key={k}>
-                      <div className="statLabel">{k}</div>
-                      <div className="statValue">{fmt(v, 2)}</div>
-                    </div>
-                  )) : <Empty text="No progress data from API OUTPUT" />}
-                </div>
-              </div>
-              <div className="panel">
-                <PanelTitle title="Progress Trend" tag="LOG" />
-                <div className="chartBox">
-                  <ResponsiveContainer width="100%" height={260}>
-                    <LineChart data={progressData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1d2a3d" />
-                      <XAxis dataKey="name" tick={{ fill: "#8795aa", fontSize: 10 }} />
-                      <YAxis tick={{ fill: "#8795aa", fontSize: 10 }} />
-                      <RechartsTooltip contentStyle={tooltipStyle} />
-                      <Line type="monotone" dataKey="value" stroke="#f6b100" strokeWidth={2} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-              <div className="panel">
-                <PanelTitle title="Behavior Radar" tag="MIRROR" />
-                <div className="chartBox">
-                  <ResponsiveContainer width="100%" height={260}>
-                    <RadarChart data={progressData.slice(0, 8)}>
-                      <PolarGrid stroke="#1d2a3d" />
-                      <PolarAngleAxis dataKey="name" tick={{ fill: "#8795aa", fontSize: 10 }} />
-                      <Radar dataKey="value" stroke="#f6b100" fill="#f6b100" fillOpacity={0.25} />
-                      <RechartsTooltip contentStyle={tooltipStyle} />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {activeTab === "settings" && (
-            <section className="panel wide">
-              <PanelTitle title="System Settings" tag="Google Sheets Sync" />
-              <div className="settingsGrid">
-                <Input label="Portfolio Name" value={portfolioName} onChange={setPortfolioName} />
-                <Input label="Line Available" value={lineAvailable} onChange={setLineAvailable} />
-                <label className="field">
-                  <span>Portfolio Phase</span>
-                  <select value={phase} onChange={(e) => setPhase(e.target.value)}>
-                    <option value="BUILD">BUILD</option>
-                    <option value="BALANCE">BALANCE</option>
-                    <option value="INCOME">INCOME</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="phaseCards">
-                <div className={phase === "BUILD" ? "phaseCard active" : "phaseCard"} onClick={() => setPhase("BUILD")}>
-                  <b>BUILD</b><span>Dividend 40% · Growth 60%</span>
-                </div>
-                <div className={phase === "BALANCE" ? "phaseCard active" : "phaseCard"} onClick={() => setPhase("BALANCE")}>
-                  <b>BALANCE</b><span>Dividend 50% · Growth 50%</span>
-                </div>
-                <div className={phase === "INCOME" ? "phaseCard active" : "phaseCard"} onClick={() => setPhase("INCOME")}>
-                  <b>INCOME</b><span>Dividend 70% · Growth 30%</span>
-                </div>
-              </div>
-
-              <div className="buttonRow">
-                <button className="terminalBtn primary" onClick={saveSettings} disabled={saving}>SAVE SETTINGS</button>
-              </div>
-            </section>
-          )}
-        </main>
       )}
+      <div style={{display:"flex", justifyContent:"flex-end", gap:12}}>
+        <button style={styles.btnDark} onClick={() => setPortfolioDraft([...portfolioDraft, { assetCode:"", units:"", avgCost:"" }])}>ADD ROW</button>
+        <button style={styles.btn} onClick={() => post({ action:"savePortfolio", portfolio: portfolioDraft })}>SAVE PORTFOLIO</button>
+      </div>
+    </Section>
+  );
+
+  const StockList = () => (
+    <Section title="Stock List Control" badge="Fade In / Fade Out">
+      {stockList.length ? <RowTable
+        headers={["Asset", "Source", "Sector", "Leader", "Universe Note", "Manual Status", "Target Weight", "Holding Status", "Eligible"]}
+        rows={stockList}
+        render={(r: AnyRow, i: number) => (
+          <tr key={i}>
+            <td style={styles.td}><b>{getAsset(r)}</b></td>
+            <td style={styles.td}>{getSource(r)}</td>
+            <td style={styles.td}>{text(r.sector)}</td>
+            <td style={styles.td}>{text(r.leaderFlag)}</td>
+            <td style={styles.td}>{text(r.universeNote)}</td>
+            <td style={styles.td}>{text(r.manualStatus)}</td>
+            <td style={styles.td}>{pct(r.targetWeight)}</td>
+            <td style={styles.td}>{getStatus(r)}</td>
+            <td style={styles.td}>{text(r.engineEligible)}</td>
+          </tr>
+        )}
+      /> : <Empty>No stock list data from API OUTPUT</Empty>}
+    </Section>
+  );
+
+  const Progress = () => (
+    <>
+      <Section title="Decision Analytics" badge="PROGRESS">
+        <div style={styles.row}>
+          <div style={styles.kpi}><div style={styles.kpiLabel}>Total Decisions</div><div style={styles.kpiValue}>{num(progress.totalDecisions, 0)}</div></div>
+          <div style={styles.kpi}><div style={styles.kpiLabel}>Follow System</div><div style={styles.kpiValue}>{num(progress.followSystemCount, 0)}</div></div>
+          <div style={styles.kpi}><div style={styles.kpiLabel}>Override</div><div style={styles.kpiValue}>{num(progress.overrideCount, 0)}</div></div>
+          <div style={styles.kpi}><div style={styles.kpiLabel}>Good / Neutral / Bad</div><div style={styles.kpiValue}>{num(progress.goodCount, 0)} / {num(progress.neutralCount, 0)} / {num(progress.badCount, 0)}</div></div>
+          <div style={styles.kpi}><div style={styles.kpiLabel}>Average Outcome</div><div style={styles.kpiValue}>{pct(progress.averageOutcome)}</div></div>
+          <div style={styles.kpi}><div style={styles.kpiLabel}>Behavior Score</div><div style={styles.kpiValue}>{num(progress.behaviorScore, 2)}</div></div>
+        </div>
+      </Section>
+    </>
+  );
+
+  const Settings = () => (
+    <Section title="System Settings" badge="Google Sheets Sync">
+      <div style={styles.row}>
+        <label><div style={styles.kpiLabel}>Portfolio Name</div><input style={styles.input} value={settings.portfolioName} onChange={(e) => setSettings({...settings, portfolioName:e.target.value})} /></label>
+        <label><div style={styles.kpiLabel}>Line Available</div><input style={styles.input} value={settings.lineAvailable} onChange={(e) => setSettings({...settings, lineAvailable:e.target.value})} /></label>
+        <label><div style={styles.kpiLabel}>Portfolio Phase</div><select style={styles.input} value={settings.selectedPhase} onChange={(e) => setSettings({...settings, selectedPhase:e.target.value})}>{phaseOptions.map(p => <option key={p}>{p}</option>)}</select></label>
+      </div>
+      <div style={styles.row, marginTop:16}>
+        <div style={styles.kpi}><h3 style={{marginTop:0, color:"#f6b100"}}>BUILD</h3><div style={styles.sub}>Dividend 40% · Growth 60%</div></div>
+        <div style={styles.kpi}><h3 style={{marginTop:0, color:"#f6b100"}}>BALANCE</h3><div style={styles.sub}>Dividend 50% · Growth 50%</div></div>
+        <div style={styles.kpi}><h3 style={{marginTop:0, color:"#f6b100"}}>INCOME</h3><div style={styles.sub}>Dividend 70% · Growth 30%</div></div>
+      </div>
+      <div style={{display:"flex", justifyContent:"flex-end", marginTop:18}}>
+        <button style={styles.btn} onClick={() => post({ action:"saveSettings", portfolioName: settings.portfolioName, lineAvailable: settings.lineAvailable, selectedPhase: settings.selectedPhase })}>SAVE SETTINGS</button>
+      </div>
+    </Section>
+  );
+
+  return (
+    <div style={styles.app}>
+      <div style={styles.shell}>
+        <Header />
+        <Nav />
+        {error && <div style={styles.error}>{error}</div>}
+        {toast && <div style={styles.ok}>{toast}</div>}
+        {active === "dashboard" && <Dashboard />}
+        {active === "orders" && <Orders />}
+        {active === "portfolio" && <Portfolio />}
+        {active === "stockList" && <StockList />}
+        {active === "progress" && <Progress />}
+        {active === "settings" && <Settings />}
+      </div>
     </div>
   );
 }
-
-function PanelTitle({ title, tag }: any) {
-  return (
-    <div className="panelTitle">
-      <h2>{title}</h2>
-      <span>{tag}</span>
-    </div>
-  );
-}
-
-function Metric({ label, value }: any) {
-  return (
-    <div className="metric">
-      <span>{label}</span>
-      <b>{value}</b>
-    </div>
-  );
-}
-
-function Input({ label, value, onChange }: any) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      <input value={value ?? ""} onChange={(e) => onChange(e.target.value)} />
-    </label>
-  );
-}
-
-function Empty({ text }: any) {
-  return <div className="empty">{text}</div>;
-}
-
-const tooltipStyle = {
-  background: "#0a0f18",
-  border: "1px solid #26364f",
-  borderRadius: 8,
-  color: "#e7edf7",
-};
-
-const STYLES = `
-*{box-sizing:border-box}
-body{margin:0;background:#05080d;color:#d7e0ea;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.terminal{min-height:100vh;background:radial-gradient(circle at top left,#122033 0,#05080d 42%,#020409 100%);padding:18px}
-.topbar{display:flex;justify-content:space-between;align-items:center;border:1px solid #1b2940;background:linear-gradient(180deg,#101927,#070b12);padding:16px 18px;border-radius:14px;box-shadow:0 0 30px rgba(0,0,0,.35)}
-.brand{font-weight:900;letter-spacing:.18em;color:#f6b100;font-size:14px}
-.headline{font-size:24px;font-weight:800;margin-top:4px;color:#f3f6fb}
-.statusStrip{display:flex;gap:14px;align-items:center;color:#93a4b8;font-size:12px;text-transform:uppercase}
-.liveDot{width:9px;height:9px;background:#27ae60;border-radius:50%;box-shadow:0 0 12px #27ae60}
-.tabs{display:flex;gap:8px;margin:14px 0;overflow:auto}
-.tabs button{background:#0c1421;border:1px solid #1b2940;color:#8ea0b8;padding:10px 14px;border-radius:10px;font-weight:800;cursor:pointer;white-space:nowrap}
-.tabs button.active{background:#f6b100;color:#080b10;border-color:#f6b100}
-.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-.panel{background:rgba(8,13,22,.92);border:1px solid #1b2940;border-radius:14px;padding:16px;box-shadow:0 20px 40px rgba(0,0,0,.25)}
-.panel.wide{grid-column:1/-1}
-.panelTitle{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;border-bottom:1px solid #162237;padding-bottom:10px}
-.panelTitle h2{font-size:16px;margin:0;color:#f3f6fb;letter-spacing:.03em}
-.panelTitle span{font-size:11px;color:#f6b100;border:1px solid #594719;background:#171206;padding:5px 8px;border-radius:999px;font-weight:900}
-.cardGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
-.statCard{background:#0b121e;border:1px solid #1b2940;border-left:3px solid #f6b100;border-radius:12px;padding:14px}
-.statLabel{font-size:11px;color:#8ea0b8;text-transform:uppercase;letter-spacing:.06em}
-.statValue{font-size:24px;font-weight:900;margin:6px 0;color:#f3f6fb}
-.statNote{font-size:12px;color:#74849a}
-.chartBox{height:260px}
-.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.sectionLabel{font-size:12px;color:#f6b100;letter-spacing:.12em}
-.orderCard{border:1px solid #1b2940;background:#0a111d;border-radius:14px;padding:14px;margin-bottom:12px}
-.orderCard.buy{border-left:4px solid #27ae60}
-.orderCard.sell{border-left:4px solid #eb5757}
-.orderTop{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
-.ticker,.tickerCell{font-weight:900;color:#fff;font-size:18px;letter-spacing:.04em}
-.subline{font-size:12px;color:#8795aa;margin-top:4px}
-.pill{border-radius:999px;padding:5px 10px;font-size:11px;font-weight:900}
-.pill.success{background:#10291d;color:#5be38a;border:1px solid #1f8b4c}
-.pill.danger{background:#301217;color:#ff8080;border:1px solid #eb5757}
-.miniGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}
-.metric{background:#07101b;border:1px solid #172338;border-radius:10px;padding:10px}
-.metric span{display:block;font-size:10px;color:#7b8ca3;text-transform:uppercase}
-.metric b{font-size:15px;color:#eef3fb}
-.executeBox{display:grid;grid-template-columns:1fr 1fr 1.2fr auto;gap:8px;align-items:end}
-.field{display:flex;flex-direction:column;gap:6px;font-size:11px;color:#8ea0b8;text-transform:uppercase;font-weight:800}
-input,select{width:100%;background:#050a12;border:1px solid #23324a;border-radius:9px;color:#eaf0f7;padding:10px 11px;outline:none}
-input:focus,select:focus{border-color:#f6b100;box-shadow:0 0 0 2px rgba(246,177,0,.12)}
-.terminalBtn,.ghostBtn{border:1px solid #2a3a55;background:#101927;color:#dbe6f4;border-radius:10px;padding:10px 12px;font-weight:900;cursor:pointer}
-.terminalBtn.primary{background:#f6b100;color:#06080c;border-color:#f6b100}
-.terminalBtn:disabled,.ghostBtn:disabled{opacity:.55;cursor:not-allowed}
-.ghostBtn{padding:8px 10px;font-size:11px}
-.dangerText{color:#ff8080}
-.tableWrap{overflow:auto;border:1px solid #172338;border-radius:12px}
-table{width:100%;border-collapse:collapse;min-width:760px}
-th,td{border-bottom:1px solid #172338;padding:10px;text-align:left;font-size:13px}
-th{background:#0b1422;color:#f6b100;text-transform:uppercase;font-size:11px;letter-spacing:.06em}
-td{color:#dbe6f4}
-.buttonRow{display:flex;justify-content:flex-end;gap:10px;margin-top:12px}
-.settingsGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.phaseCards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
-.phaseCard{border:1px solid #1b2940;background:#0a111d;border-radius:12px;padding:14px;cursor:pointer}
-.phaseCard.active{border-color:#f6b100;background:#171206}
-.phaseCard b{display:block;color:#f6b100;margin-bottom:6px}
-.phaseCard span{font-size:12px;color:#8ea0b8}
-.alert{background:#341018;color:#ffb4b4;border:1px solid #eb5757;padding:12px;border-radius:12px;margin:12px 0}
-.toast{position:fixed;right:18px;bottom:18px;background:#10291d;color:#5be38a;border:1px solid #1f8b4c;padding:12px 16px;border-radius:12px;z-index:20;font-weight:800}
-.loading,.empty{border:1px dashed #26364f;border-radius:12px;padding:26px;color:#8795aa;text-align:center;background:#07101b}
-@media(max-width:900px){
-  .grid,.split,.settingsGrid,.phaseCards{grid-template-columns:1fr}
-  .topbar{align-items:flex-start;gap:12px;flex-direction:column}
-  .miniGrid,.executeBox{grid-template-columns:1fr}
-}
-`;
 
 export default App;
