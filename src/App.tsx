@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { useEffect, useMemo, useState } from "react";
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwt3FAkuwjCkR7NCvt83G_PeX-rhOfEQtbrBFqlSs3rQ02TVpHwZe8HZhNK-V6lDMfvtg/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwfaKVblw8JfzE36N_ulBlTDIToxYBjCW9sTXlQEAk4HrwT17GBQui8mIe4hT015A9geA/exec";
 
 type AnyRow = Record<string, any>;
 
