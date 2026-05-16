@@ -21,6 +21,10 @@ const PHASES = ["Build", "Accumulate", "Income"];
 const SOURCES = ["All", "Dividend", "Growth"];
 const ORDER_TABS = ["All", "BUY", "SELL"];
 const STOCK_STATUS_OPTIONS = ["EXCLUDE", "FADE IN", "FADE OUT", "OK", "WATCH"];
+
+// Dropdown reasons — split by context per spec (Image 4)
+const SYSTEM_ORDER_REASONS = ["Follow System", "Rebalance", "Reduce Risk", "Take Profit"];
+const MANUAL_OVERRIDE_REASONS = ["OFF_SYSTEM", "Add on Dip", "Conviction Buy"];
 const EMPTY_PORTFOLIO_ROW = {
   assetCode: "",
   symbol: "",
@@ -608,11 +612,7 @@ function App() {
                 <label className="field manual-note">
                   <span>Note</span>
                   <select value={manualTrade.note} onChange={(e) => setManualTrade({ ...manualTrade, note: e.target.value })}>
-                    <option>OFF_SYSTEM</option>
-                    <option>Add on Dip</option>
-                    <option>Reduce Risk</option>
-                    <option>Take Profit</option>
-                    <option>Rebalance</option>
+                    {MANUAL_OVERRIDE_REASONS.map((r) => <option key={r}>{r}</option>)}
                   </select>
                 </label>
                 <button className="primary manual-save" disabled={saving} onClick={logManualOverride}>
@@ -1056,12 +1056,7 @@ function OrderCard({ order, draft, saving, onChange, onDone }: any) {
         </label>
       </div>
       <select className="reason-select" value={draft.note || "Follow System"} onChange={(e) => onChange("note", e.target.value)}>
-        <option>Follow System</option>
-        <option>Add on Dip</option>
-        <option>Reduce Risk</option>
-        <option>Take Profit</option>
-        <option>Rebalance</option>
-        <option>OFF_SYSTEM</option>
+        {SYSTEM_ORDER_REASONS.map((r) => <option key={r}>{r}</option>)}
       </select>
       <label className="done-row">
         <input type="checkbox" checked={done} disabled={saving || done} onChange={(e) => e.target.checked && onDone()} />
