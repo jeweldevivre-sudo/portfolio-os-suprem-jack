@@ -37,13 +37,20 @@ const EMPTY_PORTFOLIO_ROW = {
 const n = (value: any) => {
   if (value === null || value === undefined || value === "") return 0;
   if (typeof value === "number") return value;
-  const parsed = Number(String(value).replace(/[,%฿]/g, "").trim());
+  const parsed = Number(String(value).replace(/[,%฿%]/g, "").trim());
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+/** True when the raw value already has a % sign — meaning it IS the percentage number, not a fraction */
+const hasPctSign = (value: any) =>
+  typeof value === "string" && value.trim().endsWith("%");
 
 const pct = (value: any) => {
   const number = n(value);
   if (!number) return 0;
+  // If raw value already carried a "%" sign, the stripped number IS the percentage (e.g. "-6.99%" → -6.99)
+  // Only multiply by 100 when it's a plain fraction with no % sign (e.g. 0.0699 → 6.99)
+  if (hasPctSign(value)) return number;
   return Math.abs(number) <= 1 ? number * 100 : number;
 };
 
