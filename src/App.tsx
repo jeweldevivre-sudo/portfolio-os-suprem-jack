@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycby30z-3qhYhJyQcxoaEORMN0Wx6nbyrB3W80_FnzU40BXs6jyNeOEX9ZSrcn_BkIaSzZg/exec";
+  "https://script.google.com/macros/s/AKfycbyoyZs9GLTKRG-A4SVTeazYtw0nDiBcI4-wHZ3wjJprrfnZuW7_s--Pg3uxnk-JW90d/exec";
 
 const EMPTY_DATA = {
   summary: {},
@@ -162,7 +162,12 @@ function App() {
         const price = n(h.price ?? h.marketPrice);
         const avgCost = n(h.avgCost);
         const value = n(h.currentValue ?? h.value) || units * price;
-        const costValue = n(h.costValue) || units * avgCost;
+        const derivedCostValue = units * avgCost;
+        const apiCostValue = n(h.costValue);
+        const costValue =
+          apiCostValue > 0 && (derivedCostValue <= 0 || Math.abs(apiCostValue - derivedCostValue) / derivedCostValue < 0.5)
+            ? apiCostValue
+            : derivedCostValue;
         const gl = n(h.unrealizedPL ?? h.gl) || value - costValue;
         return {
           ...h,
