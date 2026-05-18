@@ -216,7 +216,7 @@ function App() {
   const goodCount = n(progress.GoodCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("good"))?.count);
   const neutralCount = n(progress.NeutralCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("neutral"))?.count);
   const badCount = n(progress.BadCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("bad"))?.count);
-  const averageOutcome = pct(progress.AverageOutcome);
+  const averageOutcome = n(progress.AverageOutcome);
   const behaviorScore = n(progress.BehaviorScore);
   const averageDecisionScore =
     decisionCount > 0 ? (goodCount * 3 + neutralCount * 1 + badCount * 0) / decisionCount : 0;
