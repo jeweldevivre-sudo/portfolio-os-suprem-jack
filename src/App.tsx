@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { useEffect, useMemo, useState } from "react";
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw0dq96xICH0EZsJ52A0JXUGpQYLRwDH12C9fxwSfIpornS77f5J3WOw8rovjJRIfOTdw/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzbo4QqtULpWj-8wGL1k63_NDoeIEhKH3NhX-x0-ap8mUDtkyLXsP6z4JNUezfztvVKKQ/exec";
 
 const EMPTY_DATA = {
   summary: {},
