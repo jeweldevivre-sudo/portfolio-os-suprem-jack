@@ -571,7 +571,7 @@ function App() {
 
         {tab === "orders" && (
           <>
-            <Panel title="Buy Orders" badge="Synced from Google Sheets">
+            <Panel title="Buy Orders">
               <div className="order-card-grid">
                 {buyOrders.length === 0 ? <Empty text="No buy orders from API OUTPUT" /> : buyOrders.map((order: any) => (
                   <OrderCard
