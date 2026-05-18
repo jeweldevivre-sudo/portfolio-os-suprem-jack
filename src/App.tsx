@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbwbAKlvTtDzYjg44UZLNbX5qZXBb5LP3M9WAuYlT0UthxjT35BjxIQ4A3IPpYb7hETeSQ/exec";
+  "https://script.google.com/macros/s/AKfycbzuzgwiTa60RHbWU7zpMAfusTGNQLdVfZHzX7ldMn4NzQiPeGNQP_Ihjgr5k-uq6UGBiw/exec";
 
 const EMPTY_DATA = {
   summary: {},
@@ -216,16 +216,47 @@ function App() {
   const goodCount = n(progress.GoodCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("good"))?.count);
   const neutralCount = n(progress.NeutralCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("neutral"))?.count);
   const badCount = n(progress.BadCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("bad"))?.count);
-  const averageOutcome = n(progress.AverageOutcome);
+  const averageOutcome = pct(progress.AverageOutcome);
   const behaviorScore = n(progress.BehaviorScore);
   const averageDecisionScore =
     decisionCount > 0 ? (goodCount * 3 + neutralCount * 1 + badCount * 0) / decisionCount : 0;
   const followSystemRate = decisionCount > 0 ? (followSystemCount / decisionCount) * 100 : 0;
-  const decisionReasonScores = [
-    { label: "Follow System", value: followSystemCount > 0 ? averageDecisionScore : 0 },
-    { label: "Add on Dip", value: overrideCount > 0 ? Math.max(0.8, averageDecisionScore * 0.55) : 0 },
-    { label: "Reduce Risk", value: overrideCount > 0 ? Math.max(0.8, averageDecisionScore * 0.45) : 0 },
-  ];
+  const decisionReasonScores = useMemo(() => {
+    const rows = data.decisionAnalytics?.trend || [];
+    const categories = [
+      "Follow System",
+      "Rebalance",
+      "Reduce Risk",
+      "Take Profit",
+      "Add on Dip",
+      "Conviction Buy",
+    ];
+
+    const normalizeNote = (note: any) => {
+      const text = String(note || "").trim().toUpperCase();
+      if (text.includes("FOLLOW")) return "Follow System";
+      if (text.includes("REBALANCE")) return "Rebalance";
+      if (text.includes("REDUCE")) return "Reduce Risk";
+      if (text.includes("TAKE")) return "Take Profit";
+      if (text.includes("ADD")) return "Add on Dip";
+      if (text.includes("CONVICTION")) return "Conviction Buy";
+      return "";
+    };
+
+    return categories.map((label) => {
+      const matched = rows.filter((row: any) => normalizeNote(row.note) === label);
+      const avg =
+        matched.length > 0
+          ? matched.reduce((sum: number, row: any) => sum + n(row.score), 0) / matched.length
+          : 0;
+
+      return {
+        label,
+        value: avg,
+        count: matched.length,
+      };
+    });
+  }, [data.decisionAnalytics]);
 
   const filteredStocks = stockList.filter((stock: any) => {
     const text = `${stock.assetCode || stock.symbol} ${stock.source} ${stock.sector} ${stock.leaderFlag} ${stock.universeNote} ${stock.manualStatus}`.toLowerCase();
@@ -571,7 +602,7 @@ function App() {
 
         {tab === "orders" && (
           <>
-            <Panel title="Buy Orders">
+            <Panel title="Buy Orders" badge="Synced from Google Sheets">
               <div className="order-card-grid">
                 {buyOrders.length === 0 ? <Empty text="No buy orders from API OUTPUT" /> : buyOrders.map((order: any) => (
                   <OrderCard
@@ -933,23 +964,26 @@ function AllocationDonut({ dividendWeight, growthWeight, targetDividend, targetG
 
 function BehaviorRadar({ data }: any) {
   const cx = 240;
-  const cy = 185;
-  const maxRadius = 120;
-  const angles = [-90, 30, 150];
+  const cy = 190;
+  const maxRadius = 125;
+  const items = data && data.length ? data : [];
+  const count = Math.max(items.length, 1);
+
   const pointFor = (index: number, value: number) => {
-    const angle = (angles[index] * Math.PI) / 180;
-    const radius = maxRadius * Math.max(0, Math.min(3, value)) / 3;
+    const angle = ((-90 + (360 / count) * index) * Math.PI) / 180;
+    const radius = maxRadius * Math.max(0, Math.min(3, n(value))) / 3;
     return {
       x: cx + Math.cos(angle) * radius,
       y: cy + Math.sin(angle) * radius,
     };
   };
+
   const fullPoint = (index: number) => pointFor(index, 3);
-  const valuePoints = data.map((item: any, index: number) => pointFor(index, item.value));
+  const valuePoints = items.map((item: any, index: number) => pointFor(index, item.value));
   const polygon = valuePoints.map((p: any) => `${p.x},${p.y}`).join(" ");
   const grid = [1, 2, 3].map((level) =>
-    angles
-      .map((_, index) => {
+    items
+      .map((_: any, index: number) => {
         const p = pointFor(index, level);
         return `${p.x},${p.y}`;
       })
@@ -957,30 +991,43 @@ function BehaviorRadar({ data }: any) {
   );
 
   return (
-    <svg className="radar-svg" viewBox="0 0 480 360" role="img">
+    <svg className="radar-svg" viewBox="0 0 480 390" role="img">
       {grid.map((points) => <polygon key={points} points={points} className="radar-grid" />)}
-      {angles.map((_, index) => {
+      {items.map((_: any, index: number) => {
         const p = fullPoint(index);
         return <line key={index} x1={cx} y1={cy} x2={p.x} y2={p.y} className="radar-axis" />;
       })}
-      <polygon points={polygon} className="radar-area" />
+      {polygon && <polygon points={polygon} className="radar-area" />}
       {valuePoints.map((p: any, index: number) => <circle key={index} cx={p.x} cy={p.y} r="4" className="radar-dot" />)}
-      {data.map((item: any, index: number) => {
+
+      {items.map((item: any, index: number) => {
         const p = fullPoint(index);
-        const dx = index === 0 ? 0 : index === 1 ? 70 : -78;
-        const dy = index === 0 ? -18 : 24;
-        return <text key={item.label} x={p.x + dx} y={p.y + dy} className="radar-label">{item.label}</text>;
+        const angle = -90 + (360 / count) * index;
+        const anchor = angle > -90 && angle < 90 ? "start" : angle === -90 || angle === 270 ? "middle" : "end";
+        const dx = angle > -90 && angle < 90 ? 10 : angle === -90 || angle === 270 ? 0 : -10;
+        const dy = angle === -90 ? -12 : angle === 90 ? 22 : 5;
+
+        return (
+          <g key={item.label}>
+            <text x={p.x + dx} y={p.y + dy} textAnchor={anchor} className="radar-label">
+              {item.label}
+            </text>
+            <text x={p.x + dx} y={p.y + dy + 15} textAnchor={anchor} className="radar-count">
+              {item.count ? `${fmt(item.value, 2)} / ${item.count}` : "-"}
+            </text>
+          </g>
+        );
       })}
-      <g transform="translate(170 330)">
+
+      <g transform="translate(158 362)">
         <rect width="16" height="12" fill="#a78bfa" />
         <text x="24" y="11" className="legend-text">Avg Score</text>
         <rect x="118" width="16" height="12" fill="#26384f" />
-        <text x="142" y="11" className="legend-text muted-fill">Full Score</text>
+        <text x="142" y="11" className="legend-text muted-fill">Full Score = 3</text>
       </g>
     </svg>
   );
 }
-
 function DecisionDonut({ good, neutral, bad }: any) {
   const total = Math.max(0, n(good) + n(neutral) + n(bad));
   const segments = [
@@ -1103,191 +1150,15 @@ function Field({ label, value, onChange }: any) {
   return (
     <label className="field">
       <span>{label}</span>
-      <input value={value} inputMode="decimal" onChange={(e) => onChange(e.target.value)} />
+      <input value={value} onChange={(e) => onChange(e.target.value)} />
     </label>
   );
 }
 
 const styles = `
-*{box-sizing:border-box}body{margin:0;background:#03070d;color:#e8f1ff;font-family:Inter,Segoe UI,Arial,sans-serif}.terminal-app{min-height:100vh;background:radial-gradient(circle at top left,#10284a 0,#06101d 32%,#02060b 100%)}.topbar{height:88px;display:flex;align-items:center;gap:16px;padding:0 34px;border-bottom:1px solid #15253b;background:#07111f}.brand-mark{width:50px;height:50px;border-radius:8px;background:linear-gradient(135deg,#2b83ff,#20d6a2);display:grid;place-items:center;font-weight:900;color:#fff;box-shadow:0 0 28px rgba(43,131,255,.25)}.brand{min-width:210px}.brand-title{font-size:22px;font-weight:900;letter-spacing:-.02em}.brand-sub{font-family:Consolas,monospace;color:#6d8db8;font-size:12px;margin-top:4px}.tabs{flex:1;display:flex;justify-content:center;gap:8px}.tab,.sync,.chip,.mini,.primary{border:1px solid #1b3353;background:#09182a;color:#96b1d4;border-radius:6px;padding:10px 14px;font-weight:800;cursor:pointer}.tab.active,.chip.active,.primary{background:#163c6e;color:#fff;border-color:#2b83ff}.sync{margin-left:auto}.shell{padding:30px 34px 70px;display:flex;flex-direction:column;gap:20px}.alert{padding:14px 18px;border:1px solid #7f1d1d;background:#2a0d12;color:#ffb4b4;border-radius:6px;font-weight:800}.market-strip{display:flex;align-items:center;gap:22px;border:1px solid #2f4058;background:#081423;border-radius:6px;padding:14px 18px;color:#94afd3;font-family:Consolas,monospace}.market-strip b{color:#fff}.dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:10px;box-shadow:0 0 15px currentColor}.red{color:#ff4d6d}.green,.good{color:#20d6a2}.bad{color:#ff4d6d}.amber{color:#ffb020}.gold{color:#ffd166}.muted{color:#8095b5}.blue{color:#5aa2ff}.violet{color:#a78bfa}.cards{display:grid;gap:16px}.cards.six{grid-template-columns:repeat(6,minmax(0,1fr))}.cards.four{grid-template-columns:repeat(4,minmax(0,1fr))}.metric{min-height:110px;border:1px solid #173151;background:linear-gradient(180deg,#091827,#06101c);border-radius:8px;padding:20px 24px;border-top:2px solid currentColor}.metric-title{font-size:13px;letter-spacing:.16em;font-weight:900;color:#d9e8ff}.metric-value{font-family:Consolas,monospace;font-size:25px;line-height:1.2;margin:12px 0 8px;font-weight:900}.metric-sub{font-size:14px;color:#88a6cc;line-height:1.45}.panel-copy{padding:0 26px 18px;color:#7894ba}.decision-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;padding:0 26px 20px}.decision-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;padding:0 26px 26px}.decision-card{border:1px solid #173151;background:#050c16;border-radius:8px;min-height:360px;padding:20px}.decision-title{font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:#bed4f5;font-weight:900;margin-bottom:12px}.radar-svg{width:100%;height:330px}.radar-grid{fill:none;stroke:#203651;stroke-width:1}.radar-axis{stroke:#203651;stroke-width:1}.radar-area{fill:#a78bfa55;stroke:#a78bfa;stroke-width:3}.radar-dot{fill:#d8c4ff}.radar-label,.legend-text{fill:#8db5e8;font-size:13px}.muted-fill{fill:#48627f}.donut-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px}.donut-svg{width:260px;height:260px;transform:rotate(-90deg)}.donut-bg{fill:none;stroke:#13263d;stroke-width:28}.donut-segment{fill:none;stroke-width:28;stroke-linecap:butt}.donut-hole{fill:#050c16}.donut-legend{display:flex;gap:14px;font-size:13px;font-weight:900}.donut-legend i{display:inline-block;width:16px;height:12px;margin-right:6px}.allocation-donut-wrap{display:grid;grid-template-columns:280px 1fr;gap:22px;align-items:center;padding:24px 26px}.allocation-donut-card{display:grid;place-items:center}.allocation-donut-svg{width:250px;height:250px;transform:rotate(-90deg)}.allocation-donut-info{display:flex;flex-direction:column;gap:16px}.allocation-line{border:1px solid #173151;background:#071321;border-radius:8px;padding:16px}.allocation-line span{display:flex;align-items:center;gap:10px;font-weight:900;font-size:18px;color:#fff}.allocation-line i{width:11px;height:11px;border-radius:50%;display:inline-block;background:currentColor}.allocation-line b{display:block;font-family:Consolas,monospace;font-size:28px;margin:10px 0}.allocation-line small{color:#88a6cc;font-size:13px}.allocation-line em{font-style:normal;font-weight:900}.allocation-line.green{color:#20d6a2}.allocation-line.blue{color:#5aa2ff}.grid{display:grid;gap:20px}.grid.two{grid-template-columns:1fr 1fr}.panel{border:1px solid #173151;background:#06101c;border-radius:8px;overflow:hidden}.panel-title{padding:18px 26px;border-bottom:1px solid #142840;font-size:13px;letter-spacing:.18em;text-transform:uppercase;font-weight:900;color:#bed4f5}.allocation{padding:18px 26px}.row{display:flex;justify-content:space-between;align-items:center;gap:14px;font-weight:800}.row i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:10px}.row.small{font-size:12px;color:#7894ba;margin-top:7px}.allocation-track{height:8px;background:#152740;border-radius:999px;margin:10px 0;position:relative}.allocation-track div{height:100%;border-radius:999px}.allocation-track em{position:absolute;top:-4px;width:2px;height:16px;background:#fff;opacity:.8}.bars{padding:18px 26px;display:flex;flex-direction:column;gap:13px}.barrow{display:grid;grid-template-columns:70px 1fr 80px;gap:12px;align-items:center;font-family:Consolas,monospace}.track{height:8px;background:#14243a;border-radius:999px;overflow:hidden}.track i{display:block;height:100%;border-radius:999px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:840px}th,td{padding:13px 18px;border-bottom:1px solid #12243a;text-align:left;white-space:nowrap}th{font-size:12px;letter-spacing:.14em;color:#d9e8ff;background:#050c16;position:sticky;top:0}td{font-family:Consolas,monospace;color:#d8e6fa;font-size:13px}tr:hover td{background:#091827}.badge{display:inline-flex;align-items:center;justify-content:center;min-width:74px;border-radius:999px;padding:4px 9px;font-family:Inter,Arial,sans-serif;font-size:11px;font-weight:900}.badge.dividend{background:#063b2c;color:#20d6a2}.badge.growth{background:#0b2a55;color:#5aa2ff}.badge.other{background:#263247;color:#aebdd4}.toolbar{display:flex;gap:10px;padding:16px 18px;border-bottom:1px solid #13263d;align-items:center;flex-wrap:wrap}.toolbar input,.toolbar select,.field input,.field select{height:40px;border:1px solid #1c385a;background:#071321;color:#e8f1ff;border-radius:6px;padding:0 12px;outline:none}.toolbar input{min-width:280px}.mini{padding:7px 10px;font-size:12px}.status-select{height:34px;min-width:128px;border:1px solid #1c385a;background:#071321;border-radius:999px;padding:0 12px;font-family:Consolas,monospace;font-weight:900;outline:none}.status-select.good{border-color:#0d6d52;background:#06291f;color:#20d6a2}.status-select.bad{border-color:#7f1d1d;background:#2a0d12;color:#ff8aa0}.status-select.muted{color:#9db2cf}.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;padding:22px}.field{display:flex;flex-direction:column;gap:8px}.field span{font-size:12px;letter-spacing:.14em;color:#8ea8cc;text-transform:uppercase;font-weight:900}.actions{padding:0 22px 22px}.primary{min-width:150px}.empty{padding:28px;color:#637d9e;text-align:center;font-family:Inter,Arial,sans-serif}.trade-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) 170px;gap:16px;padding:22px;align-items:end}.trade-save{height:40px}.settings-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:20px}.portfolio-head{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:16px 22px;border-bottom:1px solid #13263d}.help-text{color:#7894ba;font-size:13px;line-height:1.45}.portfolio-actions{display:flex;gap:10px;align-items:center}.edit-table{min-width:900px}.cell-input{width:100%;height:34px;border:1px solid transparent;background:transparent;color:#e8f1ff;border-radius:6px;padding:0 10px;font-family:Consolas,monospace;font-weight:800;outline:none}.cell-input:focus{border-color:#2b83ff;background:#071a2f}.symbol-input{text-transform:uppercase}.number-input{text-align:right}.ghost{width:30px;height:30px;border:1px solid #1b3353;background:#071321;color:#6d8db8;border-radius:6px;cursor:pointer;font-size:20px;line-height:1}.ghost:hover{color:#ff4d6d;border-color:#7f1d1d}.side-stack{display:flex;flex-direction:column;gap:20px}.coverage-grid{display:grid;grid-template-columns:1fr;gap:12px;padding:18px}.coverage-card{border:1px solid currentColor;border-radius:8px;padding:14px;background:#071321}.coverage-card div{font-weight:900;color:#d9e8ff}.coverage-card b{display:block;font-family:Consolas,monospace;font-size:26px;margin:12px 0}.coverage-card span{display:block;color:#7894ba;font-size:12px;margin-top:8px}.mini-track{height:8px;background:#152740;border-radius:999px;overflow:hidden}.mini-track i{display:block;height:100%;background:currentColor;border-radius:999px}.phase-stack{display:flex;flex-direction:column;gap:12px;padding:18px}.phase-card{text-align:left;border:1px solid #1b3353;background:#071321;color:#d9e8ff;border-radius:8px;padding:14px;cursor:pointer;display:grid;grid-template-columns:1fr 1fr;gap:8px}.phase-card b{grid-column:1/-1}.phase-card span{font-family:Consolas,monospace;color:#8ea8cc}.phase-card.active{border-color:#2b83ff;background:#0b2240}
+*{box-sizing:border-box}body{margin:0;background:#03070d;color:#e8f1ff;font-family:Inter,Segoe UI,Arial,sans-serif}.terminal-app{min-height:100vh;background:radial-gradient(circle at top left,#10284a 0,#06101d 32%,#02060b 100%)}.topbar{height:88px;display:flex;align-items:center;gap:16px;padding:0 34px;border-bottom:1px solid #15253b;background:#07111f}.brand-mark{width:50px;height:50px;border-radius:8px;background:linear-gradient(135deg,#2b83ff,#20d6a2);display:grid;place-items:center;font-weight:900;color:#fff;box-shadow:0 0 28px rgba(43,131,255,.25)}.brand{min-width:210px}.brand-title{font-size:22px;font-weight:900;letter-spacing:-.02em}.brand-sub{font-family:Consolas,monospace;color:#6d8db8;font-size:12px;margin-top:4px}.tabs{flex:1;display:flex;justify-content:center;gap:8px}.tab,.sync,.chip,.mini,.primary{border:1px solid #1b3353;background:#09182a;color:#96b1d4;border-radius:6px;padding:10px 14px;font-weight:800;cursor:pointer}.tab.active,.chip.active,.primary{background:#163c6e;color:#fff;border-color:#2b83ff}.sync{margin-left:auto}.shell{padding:30px 34px 70px;display:flex;flex-direction:column;gap:20px}.alert{padding:14px 18px;border:1px solid #7f1d1d;background:#2a0d12;color:#ffb4b4;border-radius:6px;font-weight:800}.market-strip{display:flex;align-items:center;gap:22px;border:1px solid #2f4058;background:#081423;border-radius:6px;padding:14px 18px;color:#94afd3;font-family:Consolas,monospace}.market-strip b{color:#fff}.dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:10px;box-shadow:0 0 15px currentColor}.red{color:#ff4d6d}.green,.good{color:#20d6a2}.bad{color:#ff4d6d}.amber{color:#ffb020}.gold{color:#ffd166}.muted{color:#8095b5}.blue{color:#5aa2ff}.violet{color:#a78bfa}.cards{display:grid;gap:16px}.cards.six{grid-template-columns:repeat(6,minmax(0,1fr))}.cards.four{grid-template-columns:repeat(4,minmax(0,1fr))}.metric{min-height:110px;border:1px solid #173151;background:linear-gradient(180deg,#091827,#06101c);border-radius:8px;padding:20px 24px;border-top:2px solid currentColor}.metric-title{font-size:13px;letter-spacing:.16em;font-weight:900;color:#d9e8ff}.metric-value{font-family:Consolas,monospace;font-size:25px;line-height:1.2;margin:12px 0 8px;font-weight:900}.metric-sub{font-size:14px;color:#88a6cc;line-height:1.45}.panel-copy{padding:0 26px 18px;color:#7894ba}.decision-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;padding:0 26px 20px}.decision-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;padding:0 26px 26px}.decision-card{border:1px solid #173151;background:#050c16;border-radius:8px;min-height:360px;padding:20px}.decision-title{font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:#bed4f5;font-weight:900;margin-bottom:12px}.radar-svg{width:100%;height:360px}.radar-grid{fill:none;stroke:#203651;stroke-width:1}.radar-axis{stroke:#203651;stroke-width:1}.radar-area{fill:#a78bfa55;stroke:#a78bfa;stroke-width:3}.radar-dot{fill:#d8c4ff}.radar-label,.legend-text{fill:#8db5e8;font-size:13px}.radar-count{fill:#5f789b;font-size:11px}.muted-fill{fill:#48627f}.donut-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px}.donut-svg{width:260px;height:260px;transform:rotate(-90deg)}.donut-bg{fill:none;stroke:#13263d;stroke-width:28}.donut-segment{fill:none;stroke-width:28;stroke-linecap:butt}.donut-hole{fill:#050c16}.donut-legend{display:flex;gap:14px;font-size:13px;font-weight:900}.donut-legend i{display:inline-block;width:16px;height:12px;margin-right:6px}.allocation-donut-wrap{display:grid;grid-template-columns:280px 1fr;gap:22px;align-items:center;padding:24px 26px}.allocation-donut-card{display:grid;place-items:center}.allocation-donut-svg{width:250px;height:250px;transform:rotate(-90deg)}.allocation-donut-info{display:flex;flex-direction:column;gap:16px}.allocation-line{border:1px solid #173151;background:#071321;border-radius:8px;padding:16px}.allocation-line span{display:flex;align-items:center;gap:10px;font-weight:900;font-size:18px;color:#fff}.allocation-line i{width:11px;height:11px;border-radius:50%;display:inline-block;background:currentColor}.allocation-line b{display:block;font-family:Consolas,monospace;font-size:28px;margin:10px 0}.allocation-line small{color:#88a6cc;font-size:13px}.allocation-line em{font-style:normal;font-weight:900}.allocation-line.green{color:#20d6a2}.allocation-line.blue{color:#5aa2ff}.grid{display:grid;gap:20px}.grid.two{grid-template-columns:1fr 1fr}.panel{border:1px solid #173151;background:#06101c;border-radius:8px;overflow:hidden}.panel-title{padding:18px 26px;border-bottom:1px solid #142840;font-size:13px;letter-spacing:.18em;text-transform:uppercase;font-weight:900;color:#bed4f5}.allocation{padding:18px 26px}.row{display:flex;justify-content:space-between;align-items:center;gap:14px;font-weight:800}.row i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:10px}.row.small{font-size:12px;color:#7894ba;margin-top:7px}.allocation-track{height:8px;background:#152740;border-radius:999px;margin:10px 0;position:relative}.allocation-track div{height:100%;border-radius:999px}.allocation-track em{position:absolute;top:-4px;width:2px;height:16px;background:#fff;opacity:.8}.bars{padding:18px 26px;display:flex;flex-direction:column;gap:13px}.barrow{display:grid;grid-template-columns:70px 1fr 80px;gap:12px;align-items:center;font-family:Consolas,monospace}.track{height:8px;background:#14243a;border-radius:999px;overflow:hidden}.track i{display:block;height:100%;border-radius:999px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:840px}th,td{padding:13px 18px;border-bottom:1px solid #12243a;text-align:left;white-space:nowrap}th{font-size:12px;letter-spacing:.14em;color:#d9e8ff;background:#050c16;position:sticky;top:0}td{font-family:Consolas,monospace;color:#d8e6fa;font-size:13px}tr:hover td{background:#091827}.badge{display:inline-flex;align-items:center;justify-content:center;min-width:74px;border-radius:999px;padding:4px 9px;font-family:Inter,Arial,sans-serif;font-size:11px;font-weight:900}.badge.dividend{background:#063b2c;color:#20d6a2}.badge.growth{background:#0b2a55;color:#5aa2ff}.badge.other{background:#263247;color:#aebdd4}.toolbar{display:flex;gap:10px;padding:16px 18px;border-bottom:1px solid #13263d;align-items:center;flex-wrap:wrap}.toolbar input,.toolbar select,.field input,.field select{height:40px;border:1px solid #1c385a;background:#071321;color:#e8f1ff;border-radius:6px;padding:0 12px;outline:none}.toolbar input{min-width:280px}.mini{padding:7px 10px;font-size:12px}.status-select{height:34px;min-width:128px;border:1px solid #1c385a;background:#071321;border-radius:999px;padding:0 12px;font-family:Consolas,monospace;font-weight:900;outline:none}.status-select.good{border-color:#0d6d52;background:#06291f;color:#20d6a2}.status-select.bad{border-color:#7f1d1d;background:#2a0d12;color:#ff8aa0}.status-select.muted{color:#9db2cf}.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;padding:22px}.field{display:flex;flex-direction:column;gap:8px}.field span{font-size:12px;letter-spacing:.14em;color:#8ea8cc;text-transform:uppercase;font-weight:900}.actions{padding:0 22px 22px}.primary{min-width:150px}.empty{padding:28px;color:#637d9e;text-align:center;font-family:Inter,Arial,sans-serif}.trade-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) 170px;gap:16px;padding:22px;align-items:end}.trade-save{height:40px}.settings-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:20px}.portfolio-head{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:16px 22px;border-bottom:1px solid #13263d}.help-text{color:#7894ba;font-size:13px;line-height:1.45}.portfolio-actions{display:flex;gap:10px;align-items:center}.edit-table{min-width:900px}.cell-input{width:100%;height:34px;border:1px solid transparent;background:transparent;color:#e8f1ff;border-radius:6px;padding:0 10px;font-family:Consolas,monospace;font-weight:800;outline:none}.cell-input:focus{border-color:#2b83ff;background:#071a2f}.symbol-input{text-transform:uppercase}.number-input{text-align:right}.ghost{width:30px;height:30px;border:1px solid #1b3353;background:#071321;color:#6d8db8;border-radius:6px;cursor:pointer;font-size:20px;line-height:1}.ghost:hover{color:#ff4d6d;border-color:#7f1d1d}.side-stack{display:flex;flex-direction:column;gap:20px}.coverage-grid{display:grid;grid-template-columns:1fr;gap:12px;padding:18px}.coverage-card{border:1px solid currentColor;border-radius:8px;padding:14px;background:#071321}.coverage-card div{font-weight:900;color:#d9e8ff}.coverage-card b{display:block;font-family:Consolas,monospace;font-size:26px;margin:12px 0}.coverage-card span{display:block;color:#7894ba;font-size:12px;margin-top:8px}.mini-track{height:8px;background:#152740;border-radius:999px;overflow:hidden}.mini-track i{display:block;height:100%;background:currentColor;border-radius:999px}.phase-stack{display:flex;flex-direction:column;gap:12px;padding:18px}.phase-card{text-align:left;border:1px solid #1b3353;background:#071321;color:#d9e8ff;border-radius:8px;padding:14px;cursor:pointer;display:grid;grid-template-columns:1fr 1fr;gap:8px}.phase-card b{grid-column:1/-1}.phase-card span{font-family:Consolas,monospace;color:#8ea8cc}.phase-card.active{border-color:#2b83ff;background:#0b2240}
 .panel-title{display:flex;align-items:center;justify-content:space-between;gap:12px}.panel-title em{font-style:normal;border:1px solid #3b4f6b;background:#071321;color:#6f87a8;border-radius:999px;padding:6px 12px;font-size:11px;letter-spacing:0;text-transform:none}.order-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:22px}.order-card{border:1px solid #173151;background:#071321;border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:14px}.order-card.buy{border-color:#0d6d52}.order-card.sell{border-color:#7f1d1d}.order-card.done{opacity:.62}.order-card-head{display:flex;justify-content:space-between;gap:14px;align-items:center}.order-card-head>div{display:flex;align-items:center;gap:12px}.order-card-head b{font-size:22px}.side-pill{border:1px solid currentColor;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:900}.order-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.order-stats div,.order-inputs label{background:#0b1628;border-radius:8px;padding:12px}.order-stats span,.order-inputs span{display:block;color:#7894ba;text-transform:uppercase;letter-spacing:.12em;font-size:11px;font-weight:900;margin-bottom:6px}.order-stats b{font-family:Consolas,monospace}.order-inputs{display:grid;grid-template-columns:1fr 1fr;gap:10px}.order-inputs input,.reason-select{width:100%;height:42px;border:1px solid #1c385a;background:#071321;color:#e8f1ff;border-radius:6px;padding:0 12px;outline:none;font-family:Consolas,monospace;font-weight:800}.reason-select{height:44px}.done-row{display:flex;align-items:center;gap:10px;color:#c8dcfa;font-weight:900}.done-row input{width:16px;height:16px}.manual-grid{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr 1fr;gap:16px;padding:22px;align-items:end}.manual-note{grid-column:1 / 4}.manual-save{height:40px;grid-column:4 / 6}.manual-grid .field select{height:40px;border:1px solid #1c385a;background:#071321;color:#e8f1ff;border-radius:6px;padding:0 12px;outline:none}.allocation-donut-center{display:none}
-
-@media(max-width:1200px){
-  .order-card-grid,.manual-grid{grid-template-columns:1fr}
-  .manual-note,.manual-save{grid-column:auto}
-  .allocation-donut-wrap{grid-template-columns:1fr}
-  .cards.six{grid-template-columns:repeat(3,1fr)}
-  .grid.two,.settings-grid,.trade-grid,.decision-grid{grid-template-columns:1fr}
-  .decision-metrics{grid-template-columns:repeat(2,1fr)}
-  .tabs{justify-content:flex-start;overflow-x:auto;scrollbar-width:none}
-  .tabs::-webkit-scrollbar{display:none}
-  .topbar{padding:0 18px}
-  .brand{min-width:auto}
-}
-
-@media(max-width:760px){
-  html,body,#root{width:100%;max-width:100%;overflow-x:hidden}
-  body{-webkit-text-size-adjust:100%}
-  .terminal-app{min-height:100vh;background:linear-gradient(180deg,#0b1d34 0,#03070d 44%,#02060b 100%)}
-  .topbar{
-    height:auto;
-    align-items:flex-start;
-    flex-direction:column;
-    padding:14px 14px 12px;
-    gap:10px;
-    position:sticky;
-    top:0;
-    z-index:20;
-  }
-  .brand-mark{width:42px;height:42px;border-radius:9px}
-  .brand-title{font-size:20px}
-  .brand-sub{font-size:11px}
-  .tabs{
-    width:100%;
-    display:flex;
-    justify-content:flex-start;
-    gap:8px;
-    overflow-x:auto;
-    padding-bottom:4px;
-    -webkit-overflow-scrolling:touch;
-    scroll-snap-type:x proximity;
-  }
-  .tab{
-    flex:0 0 auto;
-    min-width:max-content;
-    padding:10px 13px;
-    scroll-snap-align:start;
-  }
-  .sync{
-    position:absolute;
-    top:18px;
-    right:14px;
-    padding:9px 12px;
-  }
-  .shell{padding:14px;gap:14px}
-  .market-strip{
-    align-items:flex-start;
-    flex-direction:column;
-    gap:8px;
-    padding:12px;
-    font-size:13px;
-    line-height:1.35;
-  }
-  .cards.six,.cards.four,.form-grid,.decision-metrics{
-    grid-template-columns:1fr;
-  }
-  .metric{min-height:96px;padding:16px}
-  .metric-value{font-size:23px}
-  .grid.two,.settings-grid,.trade-grid,.decision-grid{
-    grid-template-columns:1fr;
-  }
-  .panel{border-radius:8px}
-  .panel-title{
-    padding:15px 16px;
-    font-size:12px;
-    letter-spacing:.14em;
-  }
-  .panel-title em{font-size:10px;padding:5px 9px}
-  .allocation-donut-wrap{
-    grid-template-columns:1fr;
-    padding:16px;
-    gap:12px;
-  }
-  .allocation-donut-svg{width:210px;height:210px}
-  .allocation-line{padding:14px}
-  .allocation-line b{font-size:25px}
-  .bars{padding:16px;gap:12px}
-  .barrow{
-    grid-template-columns:56px 1fr 70px;
-    gap:9px;
-    font-size:13px;
-  }
-  .order-card-grid{grid-template-columns:1fr;padding:14px}
-  .order-card{padding:16px;border-radius:10px}
-  .order-card-head b{font-size:21px}
-  .order-card-head{align-items:flex-start}
-  .order-stats{
-    grid-template-columns:1fr;
-    gap:8px;
-  }
-  .order-inputs{
-    grid-template-columns:1fr;
-  }
-  .reason-select,.order-inputs input{
-    height:46px;
-    font-size:16px;
-  }
-  .done-row{font-size:15px}
-  .done-row input{width:18px;height:18px}
-  .manual-grid{
-    grid-template-columns:1fr;
-    padding:16px;
-  }
-  .manual-note,.manual-save{grid-column:auto}
-  .manual-save,.primary,.chip{width:100%;min-height:46px}
-  .toolbar{
-    flex-direction:column;
-    align-items:stretch;
-    padding:14px;
-  }
-  .toolbar input,.toolbar select{
-    min-width:100%;
-    width:100%;
-    height:44px;
-    font-size:16px;
-  }
-  .form-grid{padding:16px}
-  .field input,.field select{
-    height:46px;
-    font-size:16px;
-  }
-  .actions{padding:0 16px 16px}
-  .portfolio-head{
-    align-items:flex-start;
-    flex-direction:column;
-    padding:14px 16px;
-  }
-  .portfolio-actions{
-    width:100%;
-    flex-direction:column;
-  }
-  .portfolio-actions button,.trade-save{width:100%}
-  .side-stack{gap:14px}
-  .coverage-grid,.phase-stack{padding:14px}
-  .phase-card{
-    grid-template-columns:1fr;
-    gap:6px;
-  }
-  .table-wrap{
-    overflow-x:auto;
-    -webkit-overflow-scrolling:touch;
-  }
-  table{min-width:720px}
-  th,td{padding:12px 14px;font-size:12px}
-  .edit-table{min-width:640px}
-  .cell-input{height:38px;font-size:16px}
-  .decision-card{min-height:300px;padding:14px}
-  .radar-svg{height:280px}
-  .donut-svg{width:220px;height:220px}
-}
-
-@media(max-width:420px){
-  .brand{max-width:210px}
-  .brand-title{font-size:18px}
-  .brand-sub{font-size:10px}
-  .sync{font-size:12px;padding:8px 10px}
-  .shell{padding:10px}
-  .tab{padding:9px 11px;font-size:13px}
-  .metric-title,.field span,.order-stats span,.order-inputs span{font-size:10.5px}
-  .metric-value{font-size:21px}
-  .panel-title{font-size:11px}
-  .barrow{grid-template-columns:48px 1fr 62px;font-size:12px}
-  .allocation-donut-svg{width:190px;height:190px}
-  .order-card{padding:14px}
-  .order-card-head b{font-size:19px}
-  table{min-width:680px}
-}
-
+@media(max-width:1200px){.order-card-grid,.manual-grid{grid-template-columns:1fr}.manual-note,.manual-save{grid-column:auto}.allocation-donut-wrap{grid-template-columns:1fr}.cards.six{grid-template-columns:repeat(3,1fr)}.grid.two,.settings-grid,.trade-grid,.decision-grid{grid-template-columns:1fr}.decision-metrics{grid-template-columns:repeat(2,1fr)}.tabs{justify-content:flex-start;overflow:auto}.topbar{padding:0 18px}.brand{min-width:auto}}@media(max-width:760px){.topbar{height:auto;align-items:flex-start;flex-direction:column;padding:18px}.tabs{width:100%;justify-content:flex-start}.shell{padding:18px}.cards.six,.cards.four,.form-grid,.decision-metrics{grid-template-columns:1fr}.market-strip,.portfolio-head{align-items:flex-start;flex-direction:column}.toolbar input{min-width:100%;width:100%}.portfolio-actions{width:100%;flex-direction:column}.portfolio-actions button,.trade-save{width:100%}}
 `;
 
 export default App;
