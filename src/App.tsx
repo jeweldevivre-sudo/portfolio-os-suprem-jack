@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbzuzgwiTa60RHbWU7zpMAfusTGNQLdVfZHzX7ldMn4NzQiPeGNQP_Ihjgr5k-uq6UGBiw/exec";
+  "https://script.google.com/macros/s/AKfycbx954UIlvG-ox64w1zEHpxQhWqzl0IYgSuw4krXXNvgpcbCnJFPN6DPPx__wJcXSbNK8A/exec";
 
 const EMPTY_DATA = {
   summary: {},
@@ -17,7 +17,7 @@ const EMPTY_DATA = {
   decisionAnalytics: { trend: [], status: [] },
 };
 
-const PHASES = ["BUILD", "BALANCE", "INCOME"];
+const PHASES = ["Build", "Accumulate", "Income"];
 const SOURCES = ["All", "Dividend", "Growth"];
 const ORDER_TABS = ["All", "BUY", "SELL"];
 const STOCK_STATUS_OPTIONS = ["EXCLUDE", "FADE IN", "FADE OUT", "OK", "WATCH"];
@@ -118,7 +118,7 @@ function App() {
   });
   const [settings, setSettings] = useState({
     portfolioName: "",
-    phase: "BUILD",
+    phase: "Build",
     lineAvailable: "",
     totalWealth: "",
   });
@@ -140,7 +140,7 @@ function App() {
       setLastSync(new Date().toLocaleString("th-TH"));
       setSettings({
         portfolioName: next.summary?.portfolioName || "",
-        phase: String(next.summary?.phase || next.summary?.portfolioPhase || "BUILD").toUpperCase().replace("ACCUMULATE", "BALANCE"),
+        phase: next.summary?.phase || next.summary?.portfolioPhase || "Build",
         lineAvailable: String(next.summary?.lineAvailable ?? ""),
         totalWealth: String(next.targets?.totalWealth ?? ""),
       });
@@ -174,16 +174,7 @@ function App() {
           value,
           costValue,
           gl,
-          // Keep API OUTPUT P/L Percent as-is. Do not pass it through percent(),
-          // because values like -0.71 already mean -0.71%, not -70.71%.
-          glPct:
-            h.unrealizedPLPercent !== undefined && h.unrealizedPLPercent !== ""
-              ? n(h.unrealizedPLPercent)
-              : h.glPct !== undefined && h.glPct !== ""
-                ? n(h.glPct)
-                : costValue > 0
-                  ? (gl / costValue) * 100
-                  : 0,
+          glPct: costValue > 0 ? (gl / costValue) * 100 : pct(h.glPct ?? h.unrealizedPLPercent),
         };
       }),
     [data.holdings]
@@ -216,13 +207,12 @@ function App() {
   const goodCount = n(progress.GoodCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("good"))?.count);
   const neutralCount = n(progress.NeutralCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("neutral"))?.count);
   const badCount = n(progress.BadCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("bad"))?.count);
-  const averageOutcome = pct(progress.AverageOutcome);
+  const averageOutcome = n(progress.AverageOutcome);
   const behaviorScore = n(progress.BehaviorScore);
   const averageDecisionScore =
     decisionCount > 0 ? (goodCount * 3 + neutralCount * 1 + badCount * 0) / decisionCount : 0;
   const followSystemRate = decisionCount > 0 ? (followSystemCount / decisionCount) * 100 : 0;
-  const decisionReasonScores = useMemo(() => {
-    const rows = data.decisionAnalytics?.trend || [];
+  const decisionReasonScores = (() => {
     const categories = [
       "Follow System",
       "Rebalance",
@@ -234,20 +224,48 @@ function App() {
 
     const normalizeNote = (note: any) => {
       const text = String(note || "").trim().toUpperCase();
+
       if (text.includes("FOLLOW")) return "Follow System";
       if (text.includes("REBALANCE")) return "Rebalance";
       if (text.includes("REDUCE")) return "Reduce Risk";
       if (text.includes("TAKE")) return "Take Profit";
       if (text.includes("ADD")) return "Add on Dip";
       if (text.includes("CONVICTION")) return "Conviction Buy";
+
       return "";
     };
 
+    const scoreFromRow = (row: any) => {
+      const score = Number(row.score || 0);
+
+      // Decision Log score system
+      // Good = 3 / Neutral = 1 / Bad = 0
+      if (score === 3 || score === 1 || score === 0) {
+        return score;
+      }
+
+      // fallback for old API structure
+      const outcome = Number(row.outcomePercent || row.outcome || 0);
+
+      if (outcome > 0) return 3;
+      if (outcome < 0) return 0;
+
+      return 1;
+    };
+
+    const trendRows = data.decisionAnalytics?.trend || [];
+
     return categories.map((label) => {
-      const matched = rows.filter((row: any) => normalizeNote(row.note) === label);
+      const matched = trendRows.filter(
+        (row: any) => normalizeNote(row.note) === label
+      );
+
       const avg =
         matched.length > 0
-          ? matched.reduce((sum: number, row: any) => sum + n(row.score), 0) / matched.length
+          ? matched.reduce(
+              (sum: number, row: any) => sum + scoreFromRow(row),
+              0
+            ) / matched.length
           : 0;
 
       return {
@@ -256,7 +274,7 @@ function App() {
         count: matched.length,
       };
     });
-  }, [data.decisionAnalytics]);
+  })();
 
   const filteredStocks = stockList.filter((stock: any) => {
     const text = `${stock.assetCode || stock.symbol} ${stock.source} ${stock.sector} ${stock.leaderFlag} ${stock.universeNote} ${stock.manualStatus}`.toLowerCase();
@@ -529,7 +547,7 @@ function App() {
           ))}
         </nav>
         <button className="sync" onClick={loadData} disabled={loading}>
-          {loading ? "SYNCING" : "SYNC"}
+          {loading ? "REFRESHING" : "REFRESH"}
         </button>
       </header>
 
@@ -553,7 +571,7 @@ function App() {
               <Metric title="UNREALIZED P/L" value={`${totalPL >= 0 ? "+" : ""}${baht(totalPL)}`} sub={`${totalPLPct >= 0 ? "+" : ""}${percent(totalPLPct)} vs cost`} color={totalPL >= 0 ? "green" : "red"} />
               <Metric title="DIVIDEND VALUE" value={baht(dividendValue)} sub={`${percent(dividendWeight)} / Target ${percent(targetDividend, 0)}`} color="green" />
               <Metric title="GROWTH VALUE" value={baht(growthValue)} sub={`${percent(growthWeight)} / Target ${percent(targetGrowth, 0)}`} color="blue" />
-              <Metric title="PORTFOLIO NAME" value={summary.portfolioName || "-"} sub={`Phase ${String(summary.phase || "BUILD").toUpperCase().replace("ACCUMULATE", "BALANCE")}`} color="violet" />
+              <Metric title="PORTFOLIO NAME" value={summary.portfolioName || "-"} sub={`Phase ${summary.phase || "Build"}`} color="violet" />
               <Metric title="LINE AVAILABLE" value={baht(cash)} sub={`Cash ready ${baht(cash)}`} color="amber" />
             </div>
 
@@ -574,7 +592,7 @@ function App() {
                     <div className="barrow" key={h.symbol}>
                       <span>{h.symbol}</span>
                       <div className="track"><i style={{ width: `${Math.min(Math.abs(h.glPct), 40) * 2.5}%`, background: h.gl >= 0 ? "#20d6a2" : "#ff4d6d" }} /></div>
-                      <b className={h.gl >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{fmt(h.glPct)}%</b>
+                      <b className={h.gl >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{percent(h.glPct)}</b>
                     </div>
                   ))}
                   {holdings.length === 0 && <Empty text="No portfolio rows from API OUT" />}
@@ -593,7 +611,7 @@ function App() {
                   baht(h.price),
                   baht(h.value),
                   <span className={h.gl >= 0 ? "good" : "bad"}>{h.gl >= 0 ? "+" : ""}{baht(h.gl)}</span>,
-                  <span className={h.glPct >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{fmt(h.glPct)}%</span>,
+                  <span className={h.glPct >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{percent(h.glPct)}</span>,
                 ])}
               />
             </Panel>
@@ -602,7 +620,7 @@ function App() {
 
         {tab === "orders" && (
           <>
-            <Panel title="Buy Orders" badge="Synced from Google Sheets">
+            <Panel title="Buy Orders">
               <div className="order-card-grid">
                 {buyOrders.length === 0 ? <Empty text="No buy orders from API OUTPUT" /> : buyOrders.map((order: any) => (
                   <OrderCard
@@ -617,7 +635,7 @@ function App() {
               </div>
             </Panel>
 
-            <Panel title="Sell Alerts" badge="Reduce / Fade Out">
+            <Panel title="Sell Alerts">
               <div className="order-card-grid">
                 {sellOrders.length === 0 ? <Empty text="No sell alerts from API OUTPUT" /> : sellOrders.map((order: any) => (
                   <OrderCard
@@ -650,7 +668,9 @@ function App() {
                   <select value={manualTrade.note} onChange={(e) => setManualTrade({ ...manualTrade, note: e.target.value })}>
                     <option>OFF_SYSTEM</option>
                     <option>Add on Dip</option>
-                    <option>Conviction Buy</option>
+                    <option>Reduce Risk</option>
+                    <option>Take Profit</option>
+                    <option>Rebalance</option>
                   </select>
                 </label>
                 <button className="primary manual-save" disabled={saving} onClick={logManualOverride}>
@@ -724,7 +744,7 @@ function App() {
                 <label className="field">
                   <span>Phase</span>
                   <select value={settings.phase} onChange={(e) => setSettings({ ...settings, phase: e.target.value })}>
-                    {PHASES.map((item) => <option key={item} value={item}>{item}</option>)}
+                    {PHASES.map((item) => <option key={item}>{item}</option>)}
                   </select>
                 </label>
                 <Field label="Line Available" value={settings.lineAvailable} onChange={(v) => setSettings({ ...settings, lineAvailable: v })} />
@@ -819,9 +839,9 @@ function App() {
                 <Panel title="Phase Controls">
                   <div className="phase-stack">
                     {[
-                      ["BUILD", 40, 60],
-                      ["BALANCE", 50, 50],
-                      ["INCOME", 70, 30],
+                      ["Build", 40, 60],
+                      ["Accumulate", 50, 50],
+                      ["Income", 70, 30],
                     ].map(([name, div, growth]) => (
                       <button
                         key={name}
@@ -998,7 +1018,9 @@ function BehaviorRadar({ data }: any) {
         return <line key={index} x1={cx} y1={cy} x2={p.x} y2={p.y} className="radar-axis" />;
       })}
       {polygon && <polygon points={polygon} className="radar-area" />}
-      {valuePoints.map((p: any, index: number) => <circle key={index} cx={p.x} cy={p.y} r="4" className="radar-dot" />)}
+      {valuePoints.map((p: any, index: number) => (
+        <circle key={index} cx={p.x} cy={p.y} r={items[index]?.value > 0 ? "5" : "3"} className="radar-dot" />
+      ))}
 
       {items.map((item: any, index: number) => {
         const p = fullPoint(index);
@@ -1111,9 +1133,11 @@ function OrderCard({ order, draft, saving, onChange, onDone }: any) {
       </div>
       <select className="reason-select" value={draft.note || "Follow System"} onChange={(e) => onChange("note", e.target.value)}>
         <option>Follow System</option>
-        <option>Rebalance</option>
+        <option>Add on Dip</option>
         <option>Reduce Risk</option>
         <option>Take Profit</option>
+        <option>Rebalance</option>
+        <option>OFF_SYSTEM</option>
       </select>
       <label className="done-row">
         <input type="checkbox" checked={done} disabled={saving || done} onChange={(e) => e.target.checked && onDone()} />
