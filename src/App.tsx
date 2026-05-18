@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbz_od7agXCFWqcv5SICGtRSb8HhrYxpAI5wsXF_EZYt8S3uHgZvVSYuhC_tNbWGn-KiIA/exec";
+  "https://script.google.com/macros/s/AKfycbyu7AhsWeIS6EOCjMOlmtTPnt4u-rgfeRR_7aiXq6lNLhP7b-17bUhlZlzWsfOifeusqA/exec";
 
 const EMPTY_DATA = {
   summary: {},
@@ -200,17 +200,40 @@ function App() {
   const targetGrowth = pct(summary.targetGrowthWeight) || 60;
   const rebalanceNeeded = Math.abs(dividendWeight - targetDividend) >= 5 || String(summary.rebalanceStatus || "").includes("REBALANCE");
   const progress = data.progress || {};
-  const decisionStatus = data.decisionAnalytics?.status || [];
-  const decisionCount = n(progress.TotalDecisions);
-  const followSystemCount = n(progress.FollowSystemCount);
-  const overrideCount = n(progress.OverrideCount);
-  const goodCount = n(progress.GoodCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("good"))?.count);
-  const neutralCount = n(progress.NeutralCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("neutral"))?.count);
-  const badCount = n(progress.BadCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("bad"))?.count);
-  const averageOutcome = n(progress.AverageOutcome);
+  const da = data.decisionAnalytics || {};
+  const trendRows: any[] = da.trend || [];
+  const decisionStatus = da.status || data.decisionStatus || [];
+
+  // Read from decisionAnalytics first. Fallback to progress only for older API versions.
+  const decisionCount =
+    n(da.totalCount) ||
+    trendRows.length ||
+    n(progress.TotalDecisions || progress.totalDecisions);
+
+  const followSystemCount =
+    n(da.followCount) ||
+    n(progress.FollowSystemCount || progress.followSystemCount);
+
+  const goodCount =
+    n(da.goodCount) ||
+    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("good"))?.count) ||
+    n(progress.GoodCount || progress.goodCount);
+
+  const neutralCount =
+    n(da.neutralCount) ||
+    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("neutral"))?.count) ||
+    n(progress.NeutralCount || progress.neutralCount);
+
+  const badCount =
+    n(da.badCount) ||
+    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("bad"))?.count) ||
+    n(progress.BadCount || progress.badCount);
+
+  const averageOutcome =
+    n(da.avgOutcome) ||
+    n(progress.AverageOutcome || progress.averageOutcome);
   const behaviorScore = n(progress.BehaviorScore);
-  const averageDecisionScore =
-    decisionCount > 0 ? (goodCount * 3 + neutralCount * 1 + badCount * 0) / decisionCount : 0;
+  const averageDecisionScore = decisionCount > 0 ? (goodCount * 3 + neutralCount * 1 + badCount * 0) / decisionCount : 0;
   const followSystemRate = decisionCount > 0 ? (followSystemCount / decisionCount) * 100 : 0;
   const decisionReasonScores = (() => {
     const categories = [
