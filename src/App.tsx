@@ -201,44 +201,16 @@ function App() {
   const rebalanceNeeded = Math.abs(dividendWeight - targetDividend) >= 5 || String(summary.rebalanceStatus || "").includes("REBALANCE");
   const progress = data.progress || {};
   const decisionStatus = data.decisionAnalytics?.status || [];
-  const da = data.decisionAnalytics || {};
-  const trendRowsAll: any[] = (da.trend || []);
-
-  // อ่านจาก progress ก่อน (GAS ใหม่เขียนค่าแล้ว) fallback ไป da และนับจาก trend
-  const decisionCount =
-    n(progress.TotalDecisions || progress.totalDecisions) ||
-    n(da.totalCount) ||
-    trendRowsAll.length;
-
-  const followSystemCount =
-    n(progress.FollowSystemCount || progress.followSystemCount) ||
-    n(da.followCount) ||
-    trendRowsAll.filter((r: any) => String(r.note || "").toUpperCase().indexOf("OFF_SYSTEM") === -1).length;
-
-  const goodCount =
-    n(progress.GoodCount || progress.goodCount) ||
-    n(da.goodCount) ||
-    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("good"))?.count);
-
-  const neutralCount =
-    n(progress.NeutralCount || progress.neutralCount) ||
-    n(da.neutralCount) ||
-    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("neutral"))?.count);
-
-  const badCount =
-    n(progress.BadCount || progress.badCount) ||
-    n(da.badCount) ||
-    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("bad"))?.count);
-
-  // AverageOutcome จาก PROGRESS sheet มาเป็น "23.83%" (string %) → n() = 23.83 → ใช้ได้เลย
-  // da.avgOutcome จาก GAS ใหม่ก็เป็น % แล้วเช่นกัน
-  const averageOutcome =
-    n(progress.AverageOutcome || progress.averageOutcome) ||
-    n(da.avgOutcome);
-
+  const decisionCount = n(progress.TotalDecisions);
+  const followSystemCount = n(progress.FollowSystemCount);
+  const overrideCount = n(progress.OverrideCount);
+  const goodCount = n(progress.GoodCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("good"))?.count);
+  const neutralCount = n(progress.NeutralCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("neutral"))?.count);
+  const badCount = n(progress.BadCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("bad"))?.count);
+  const averageOutcome = n(progress.AverageOutcome);
+  const behaviorScore = n(progress.BehaviorScore);
   const averageDecisionScore =
     decisionCount > 0 ? (goodCount * 3 + neutralCount * 1 + badCount * 0) / decisionCount : 0;
-
   const followSystemRate = decisionCount > 0 ? (followSystemCount / decisionCount) * 100 : 0;
   const decisionReasonScores = (() => {
     const categories = [
@@ -264,20 +236,24 @@ function App() {
     };
 
     const scoreFromRow = (row: any) => {
-      // ต้องไม่ใช้ `row.score || 0` เพราะ score=0 (Bad) เป็น falsy ใน JS
-      const raw = row.score;
-      const score = (raw !== null && raw !== undefined && raw !== "") ? Number(raw) : null;
-      // Good=3 / Neutral=1 / Bad=0
-      if (score === 3 || score === 1 || score === 0) return score;
-      // fallback จาก outcomePercent (decimal เช่น 0.0233 = 2.33%)
+      const score = Number(row.score || 0);
+
+      // Decision Log score system
+      // Good = 3 / Neutral = 1 / Bad = 0
+      if (score === 3 || score === 1 || score === 0) {
+        return score;
+      }
+
+      // fallback for old API structure
       const outcome = Number(row.outcomePercent || row.outcome || 0);
-      const outcomePct = Math.abs(outcome) <= 1 ? outcome * 100 : outcome;
-      if (outcomePct > 0) return 3;
-      if (outcomePct < 0) return 0;
+
+      if (outcome > 0) return 3;
+      if (outcome < 0) return 0;
+
       return 1;
     };
 
-    const trendRows = trendRowsAll;
+    const trendRows = data.decisionAnalytics?.trend || [];
 
     return categories.map((label) => {
       const matched = trendRows.filter(
@@ -616,7 +592,7 @@ function App() {
                     <div className="barrow" key={h.symbol}>
                       <span>{h.symbol}</span>
                       <div className="track"><i style={{ width: `${Math.min(Math.abs(h.glPct), 40) * 2.5}%`, background: h.gl >= 0 ? "#20d6a2" : "#ff4d6d" }} /></div>
-                      <b className={h.gl >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{fmt(h.glPct)}%</b>
+                      <b className={h.gl >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{percent(h.glPct)}</b>
                     </div>
                   ))}
                   {holdings.length === 0 && <Empty text="No portfolio rows from API OUT" />}
@@ -635,7 +611,7 @@ function App() {
                   baht(h.price),
                   baht(h.value),
                   <span className={h.gl >= 0 ? "good" : "bad"}>{h.gl >= 0 ? "+" : ""}{baht(h.gl)}</span>,
-                  <span className={h.glPct >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{fmt(h.glPct)}%</span>,
+                  <span className={h.glPct >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{percent(h.glPct)}</span>,
                 ])}
               />
             </Panel>
@@ -692,9 +668,7 @@ function App() {
                   <select value={manualTrade.note} onChange={(e) => setManualTrade({ ...manualTrade, note: e.target.value })}>
                     <option>OFF_SYSTEM</option>
                     <option>Add on Dip</option>
-                    <option>Reduce Risk</option>
-                    <option>Take Profit</option>
-                    <option>Rebalance</option>
+                    <option>Conviction Buy</option>
                   </select>
                 </label>
                 <button className="primary manual-save" disabled={saving} onClick={logManualOverride}>
@@ -1157,11 +1131,9 @@ function OrderCard({ order, draft, saving, onChange, onDone }: any) {
       </div>
       <select className="reason-select" value={draft.note || "Follow System"} onChange={(e) => onChange("note", e.target.value)}>
         <option>Follow System</option>
-        <option>Add on Dip</option>
+        <option>Rebalance</option>
         <option>Reduce Risk</option>
         <option>Take Profit</option>
-        <option>Rebalance</option>
-        <option>OFF_SYSTEM</option>
       </select>
       <label className="done-row">
         <input type="checkbox" checked={done} disabled={saving || done} onChange={(e) => e.target.checked && onDone()} />
