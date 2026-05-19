@@ -108,6 +108,7 @@ function App() {
     avgCost: "",
   });
   const [orderDrafts, setOrderDrafts] = useState<any>({});
+  const [dismissedOrders, setDismissedOrders] = useState<Set<string>>(new Set());
   const [manualTrade, setManualTrade] = useState({
     assetCode: "",
     actionType: "BUY",
@@ -518,7 +519,9 @@ function App() {
         marketPrice: order.marketPrice || order.price || draft.actualPrice,
         note: draft.note || "Follow System",
       });
-      setOrderDrafts((drafts: any) => ({ ...drafts, [orderKey(order)]: { ...draft, done: true } }));
+      const key = orderKey(order);
+      setOrderDrafts((drafts: any) => ({ ...drafts, [key]: { ...draft, done: true } }));
+      setDismissedOrders((prev) => new Set(prev).add(key));
       await loadData();
     } catch (err: any) {
       setError(err.message || "Log failed");
@@ -654,7 +657,9 @@ function App() {
           <>
             <Panel title="Buy Orders">
               <div className="order-card-grid">
-                {buyOrders.length === 0 ? <Empty text="No buy orders from API OUTPUT" /> : buyOrders.map((order: any) => (
+                {buyOrders.filter((order: any) => !dismissedOrders.has(orderKey({ ...order, actionType: "BUY" }))).length === 0
+                  ? <Empty text="No buy orders from API OUTPUT" />
+                  : buyOrders.filter((order: any) => !dismissedOrders.has(orderKey({ ...order, actionType: "BUY" }))).map((order: any) => (
                   <OrderCard
                     key={orderKey({ ...order, actionType: "BUY" })}
                     order={{ ...order, actionType: "BUY" }}
@@ -669,7 +674,9 @@ function App() {
 
             <Panel title="Sell Alerts">
               <div className="order-card-grid">
-                {sellOrders.length === 0 ? <Empty text="No sell alerts from API OUTPUT" /> : sellOrders.map((order: any) => (
+                {sellOrders.filter((order: any) => !dismissedOrders.has(orderKey({ ...order, actionType: "SELL" }))).length === 0
+                  ? <Empty text="No sell alerts from API OUTPUT" />
+                  : sellOrders.filter((order: any) => !dismissedOrders.has(orderKey({ ...order, actionType: "SELL" }))).map((order: any) => (
                   <OrderCard
                     key={orderKey({ ...order, actionType: "SELL" })}
                     order={{ ...order, actionType: "SELL" }}
