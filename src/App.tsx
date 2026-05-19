@@ -174,16 +174,10 @@ function App() {
           value,
           costValue,
           gl,
-          // glPct เก็บเป็น % เสมอ (เช่น -0.71 ไม่ใช่ -0.0071)
-          // คำนวณจาก gl/costValue ก่อน ถ้าไม่ได้ใช้ค่าจาก API
-          // pct() ห้ามใช้กับ glPct เพราะจะ double-scale ค่าที่อยู่ระหว่าง -1 ถึง 1
           glPct: costValue > 0
             ? (gl / costValue) * 100
             : (() => {
                 const raw = n(h.glPct ?? h.unrealizedPLPercent);
-                // ถ้าค่า raw เป็น decimal เช่น -0.0071 ให้คูณ 100
-                // ถ้าเป็น % อยู่แล้ว เช่น -0.71 ให้ใช้เลย
-                // boundary: ถ้า |raw| <= 1 และ units*price > 0 ให้ถือว่าเป็น decimal
                 return (Math.abs(raw) <= 1 && (units * price) > 100) ? raw * 100 : raw;
               })(),
         };
@@ -215,6 +209,7 @@ function App() {
   const da = data.decisionAnalytics || {};
   const trendRowsAll: any[] = da.trend || [];
 
+  // อ่านจาก progress (มี formula ใน sheet แล้ว) → da → trend fallback
   const decisionCount =
     n(progress.TotalDecisions || progress.totalDecisions) ||
     n(da.totalCount) || trendRowsAll.length;
@@ -239,7 +234,7 @@ function App() {
     n(da.badCount) ||
     n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("bad"))?.count);
 
-  // AverageOutcome จาก PROGRESS sheet เป็น "23.83%" → n() = 23.83 → ใช้ได้เลย ไม่ต้องแปลง
+  // AverageOutcome จาก sheet เป็น "23.83%" string → n() = 23.83 → ใช้ได้เลย
   const averageOutcome =
     n(progress.AverageOutcome || progress.averageOutcome) ||
     n(da.avgOutcome);
@@ -247,6 +242,7 @@ function App() {
   const averageDecisionScore =
     decisionCount > 0 ? (goodCount * 3 + neutralCount * 1 + badCount * 0) / decisionCount : 0;
   const followSystemRate = decisionCount > 0 ? (followSystemCount / decisionCount) * 100 : 0;
+
   const decisionReasonScores = (() => {
     const categories = [
       "Follow System",
@@ -259,22 +255,19 @@ function App() {
 
     const normalizeNote = (note: any) => {
       const text = String(note || "").trim().toUpperCase();
-
       if (text.includes("FOLLOW")) return "Follow System";
       if (text.includes("REBALANCE")) return "Rebalance";
       if (text.includes("REDUCE")) return "Reduce Risk";
       if (text.includes("TAKE")) return "Take Profit";
       if (text.includes("ADD")) return "Add on Dip";
       if (text.includes("CONVICTION")) return "Conviction Buy";
-
       return "";
     };
 
     const scoreFromRow = (row: any) => {
-      // ห้ามใช้ row.score || 0 เพราะ score=0 (Bad) เป็น falsy ใน JS จะ fallback ผิด
+      // ห้ามใช้ row.score || 0 เพราะ score=0 (Bad) เป็น falsy ใน JS
       const raw = row.score;
       const score = (raw !== null && raw !== undefined && raw !== "") ? Number(raw) : null;
-      // Good=3 / Neutral=1 / Bad=0
       if (score === 3 || score === 1 || score === 0) return score;
       // fallback จาก outcomePercent (decimal เช่น 0.0233 = 2.33%)
       const outcome = Number(row.outcomePercent || row.outcome || 0);
@@ -284,26 +277,34 @@ function App() {
       return 1;
     };
 
-    const trendRows = trendRowsAll;
+    // ── Primary: คำนวณจาก trend rows (ถ้ามี) ──────────────────────────────
+    if (trendRowsAll.length > 0) {
+      return categories.map((label) => {
+        const matched = trendRowsAll.filter(
+          (row: any) => normalizeNote(row.note) === label
+        );
+        const avg = matched.length > 0
+          ? matched.reduce((sum: number, row: any) => sum + scoreFromRow(row), 0) / matched.length
+          : 0;
+        return { label, value: avg, count: matched.length };
+      });
+    }
+
+    // ── Fallback: ถ้า trend ว่าง (GAS เวอร์ชันเก่า) ประมาณจาก progress counts ──
+    // BehaviorScore จาก sheet = average score รวม → ใช้เป็น proxy ให้ Follow System
+    // categories อื่นที่ไม่มีข้อมูลแสดง 0
+    const behaviorScoreRaw = n(progress.BehaviorScore || progress.behaviorScore);
+    // sheet เก็บ BehaviorScore = 50 หมายถึง 50% ของ max (3) = 1.50
+    const proxyScore = behaviorScoreRaw > 3
+      ? behaviorScoreRaw / 100 * 3   // เช่น 50 → 1.5
+      : behaviorScoreRaw;             // เช่น 1.5 → 1.5 directly
 
     return categories.map((label) => {
-      const matched = trendRows.filter(
-        (row: any) => normalizeNote(row.note) === label
-      );
-
-      const avg =
-        matched.length > 0
-          ? matched.reduce(
-              (sum: number, row: any) => sum + scoreFromRow(row),
-              0
-            ) / matched.length
-          : 0;
-
-      return {
-        label,
-        value: avg,
-        count: matched.length,
-      };
+      // Follow System เป็น category หลัก ใช้ proxy score + followSystemCount เป็น count
+      if (label === "Follow System") {
+        return { label, value: proxyScore || averageDecisionScore, count: n(followSystemCount) };
+      }
+      return { label, value: 0, count: 0 };
     });
   })();
 
