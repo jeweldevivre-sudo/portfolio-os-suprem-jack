@@ -174,7 +174,18 @@ function App() {
           value,
           costValue,
           gl,
-          glPct: costValue > 0 ? (gl / costValue) * 100 : pct(h.glPct ?? h.unrealizedPLPercent),
+          // glPct เก็บเป็น % เสมอ (เช่น -0.71 ไม่ใช่ -0.0071)
+          // คำนวณจาก gl/costValue ก่อน ถ้าไม่ได้ใช้ค่าจาก API
+          // pct() ห้ามใช้กับ glPct เพราะจะ double-scale ค่าที่อยู่ระหว่าง -1 ถึง 1
+          glPct: costValue > 0
+            ? (gl / costValue) * 100
+            : (() => {
+                const raw = n(h.glPct ?? h.unrealizedPLPercent);
+                // ถ้าค่า raw เป็น decimal เช่น -0.0071 ให้คูณ 100
+                // ถ้าเป็น % อยู่แล้ว เช่น -0.71 ให้ใช้เลย
+                // boundary: ถ้า |raw| <= 1 และ units*price > 0 ให้ถือว่าเป็น decimal
+                return (Math.abs(raw) <= 1 && (units * price) > 100) ? raw * 100 : raw;
+              })(),
         };
       }),
     [data.holdings]
@@ -201,14 +212,38 @@ function App() {
   const rebalanceNeeded = Math.abs(dividendWeight - targetDividend) >= 5 || String(summary.rebalanceStatus || "").includes("REBALANCE");
   const progress = data.progress || {};
   const decisionStatus = data.decisionAnalytics?.status || [];
-  const decisionCount = n(progress.TotalDecisions);
-  const followSystemCount = n(progress.FollowSystemCount);
-  const overrideCount = n(progress.OverrideCount);
-  const goodCount = n(progress.GoodCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("good"))?.count);
-  const neutralCount = n(progress.NeutralCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("neutral"))?.count);
-  const badCount = n(progress.BadCount) || n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("bad"))?.count);
-  const averageOutcome = n(progress.AverageOutcome);
-  const behaviorScore = n(progress.BehaviorScore);
+  const da = data.decisionAnalytics || {};
+  const trendRowsAll: any[] = da.trend || [];
+
+  const decisionCount =
+    n(progress.TotalDecisions || progress.totalDecisions) ||
+    n(da.totalCount) || trendRowsAll.length;
+
+  const followSystemCount =
+    n(progress.FollowSystemCount || progress.followSystemCount) ||
+    n(da.followCount) ||
+    trendRowsAll.filter((r: any) => String(r.note || "").toUpperCase().indexOf("OFF_SYSTEM") === -1).length;
+
+  const goodCount =
+    n(progress.GoodCount || progress.goodCount) ||
+    n(da.goodCount) ||
+    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("good"))?.count);
+
+  const neutralCount =
+    n(progress.NeutralCount || progress.neutralCount) ||
+    n(da.neutralCount) ||
+    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("neutral"))?.count);
+
+  const badCount =
+    n(progress.BadCount || progress.badCount) ||
+    n(da.badCount) ||
+    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("bad"))?.count);
+
+  // AverageOutcome จาก PROGRESS sheet เป็น "23.83%" → n() = 23.83 → ใช้ได้เลย ไม่ต้องแปลง
+  const averageOutcome =
+    n(progress.AverageOutcome || progress.averageOutcome) ||
+    n(da.avgOutcome);
+
   const averageDecisionScore =
     decisionCount > 0 ? (goodCount * 3 + neutralCount * 1 + badCount * 0) / decisionCount : 0;
   const followSystemRate = decisionCount > 0 ? (followSystemCount / decisionCount) * 100 : 0;
@@ -236,24 +271,20 @@ function App() {
     };
 
     const scoreFromRow = (row: any) => {
-      const score = Number(row.score || 0);
-
-      // Decision Log score system
-      // Good = 3 / Neutral = 1 / Bad = 0
-      if (score === 3 || score === 1 || score === 0) {
-        return score;
-      }
-
-      // fallback for old API structure
+      // ห้ามใช้ row.score || 0 เพราะ score=0 (Bad) เป็น falsy ใน JS จะ fallback ผิด
+      const raw = row.score;
+      const score = (raw !== null && raw !== undefined && raw !== "") ? Number(raw) : null;
+      // Good=3 / Neutral=1 / Bad=0
+      if (score === 3 || score === 1 || score === 0) return score;
+      // fallback จาก outcomePercent (decimal เช่น 0.0233 = 2.33%)
       const outcome = Number(row.outcomePercent || row.outcome || 0);
-
-      if (outcome > 0) return 3;
-      if (outcome < 0) return 0;
-
+      const outcomePct = Math.abs(outcome) <= 1 ? outcome * 100 : outcome;
+      if (outcomePct > 0) return 3;
+      if (outcomePct < 0) return 0;
       return 1;
     };
 
-    const trendRows = data.decisionAnalytics?.trend || [];
+    const trendRows = trendRowsAll;
 
     return categories.map((label) => {
       const matched = trendRows.filter(
@@ -592,7 +623,7 @@ function App() {
                     <div className="barrow" key={h.symbol}>
                       <span>{h.symbol}</span>
                       <div className="track"><i style={{ width: `${Math.min(Math.abs(h.glPct), 40) * 2.5}%`, background: h.gl >= 0 ? "#20d6a2" : "#ff4d6d" }} /></div>
-                      <b className={h.gl >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{percent(h.glPct)}</b>
+                      <b className={h.gl >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{fmt(h.glPct)}%</b>
                     </div>
                   ))}
                   {holdings.length === 0 && <Empty text="No portfolio rows from API OUT" />}
@@ -611,7 +642,7 @@ function App() {
                   baht(h.price),
                   baht(h.value),
                   <span className={h.gl >= 0 ? "good" : "bad"}>{h.gl >= 0 ? "+" : ""}{baht(h.gl)}</span>,
-                  <span className={h.glPct >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{percent(h.glPct)}</span>,
+                  <span className={h.glPct >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{fmt(h.glPct)}%</span>,
                 ])}
               />
             </Panel>
