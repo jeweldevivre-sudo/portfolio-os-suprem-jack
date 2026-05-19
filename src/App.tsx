@@ -202,43 +202,39 @@ function App() {
   const progress = data.progress || {};
   const decisionStatus = data.decisionAnalytics?.status || [];
   const da = data.decisionAnalytics || {};
-  const trendRowsAll: any[] = da.trend || [];
+  const trendRowsAll: any[] = (da.trend || []);
 
-  // อ่านจาก decisionAnalytics ที่ GAS คำนวณไว้แล้ว
-  // fallback ไป progress (กรณี GAS เวอร์ชันเก่า) และนับจาก trend array โดยตรงเป็น last resort
+  // อ่านจาก progress ก่อน (GAS ใหม่เขียนค่าแล้ว) fallback ไป da และนับจาก trend
   const decisionCount =
+    n(progress.TotalDecisions || progress.totalDecisions) ||
     n(da.totalCount) ||
-    trendRowsAll.length ||
-    n(progress.TotalDecisions || progress.totalDecisions);
+    trendRowsAll.length;
 
   const followSystemCount =
+    n(progress.FollowSystemCount || progress.followSystemCount) ||
     n(da.followCount) ||
-    trendRowsAll.filter((r: any) => String(r.note || "").toUpperCase().indexOf("OFF_SYSTEM") === -1).length ||
-    n(progress.FollowSystemCount || progress.followSystemCount);
-
-  const overrideCount =
-    trendRowsAll.filter((r: any) => String(r.note || "").toUpperCase().indexOf("OFF_SYSTEM") !== -1).length ||
-    n(progress.OverrideCount || progress.overrideCount);
+    trendRowsAll.filter((r: any) => String(r.note || "").toUpperCase().indexOf("OFF_SYSTEM") === -1).length;
 
   const goodCount =
+    n(progress.GoodCount || progress.goodCount) ||
     n(da.goodCount) ||
-    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("good"))?.count) ||
-    n(progress.GoodCount || progress.goodCount);
+    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("good"))?.count);
 
   const neutralCount =
+    n(progress.NeutralCount || progress.neutralCount) ||
     n(da.neutralCount) ||
-    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("neutral"))?.count) ||
-    n(progress.NeutralCount || progress.neutralCount);
+    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("neutral"))?.count);
 
   const badCount =
+    n(progress.BadCount || progress.badCount) ||
     n(da.badCount) ||
-    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("bad"))?.count) ||
-    n(progress.BadCount || progress.badCount);
+    n(decisionStatus.find((s: any) => String(s.status).toLowerCase().includes("bad"))?.count);
 
-  // avgOutcome จาก GAS ส่งมาเป็น % แล้ว (เช่น 2.33 ไม่ใช่ 0.0233)
+  // AverageOutcome จาก PROGRESS sheet มาเป็น "23.83%" (string %) → n() = 23.83 → ใช้ได้เลย
+  // da.avgOutcome จาก GAS ใหม่ก็เป็น % แล้วเช่นกัน
   const averageOutcome =
-    n(da.avgOutcome) ||
-    n(progress.AverageOutcome || progress.averageOutcome);
+    n(progress.AverageOutcome || progress.averageOutcome) ||
+    n(da.avgOutcome);
 
   const averageDecisionScore =
     decisionCount > 0 ? (goodCount * 3 + neutralCount * 1 + badCount * 0) / decisionCount : 0;
@@ -268,14 +264,12 @@ function App() {
     };
 
     const scoreFromRow = (row: any) => {
-      // ใช้ hasOwnProperty เพื่อไม่ให้ score=0 (Bad) ถูกมองเป็น falsy
+      // ต้องไม่ใช้ `row.score || 0` เพราะ score=0 (Bad) เป็น falsy ใน JS
       const raw = row.score;
-      const score = raw !== null && raw !== undefined && raw !== "" ? Number(raw) : null;
-
-      // Decision Log score system: Good = 3 / Neutral = 1 / Bad = 0
+      const score = (raw !== null && raw !== undefined && raw !== "") ? Number(raw) : null;
+      // Good=3 / Neutral=1 / Bad=0
       if (score === 3 || score === 1 || score === 0) return score;
-
-      // fallback: คำนวณจาก outcomePercent (GAS ส่งมาเป็น decimal เช่น 0.0233)
+      // fallback จาก outcomePercent (decimal เช่น 0.0233 = 2.33%)
       const outcome = Number(row.outcomePercent || row.outcome || 0);
       const outcomePct = Math.abs(outcome) <= 1 ? outcome * 100 : outcome;
       if (outcomePct > 0) return 3;
@@ -622,7 +616,7 @@ function App() {
                     <div className="barrow" key={h.symbol}>
                       <span>{h.symbol}</span>
                       <div className="track"><i style={{ width: `${Math.min(Math.abs(h.glPct), 40) * 2.5}%`, background: h.gl >= 0 ? "#20d6a2" : "#ff4d6d" }} /></div>
-                      <b className={h.gl >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{percent(h.glPct)}</b>
+                      <b className={h.gl >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{fmt(h.glPct)}%</b>
                     </div>
                   ))}
                   {holdings.length === 0 && <Empty text="No portfolio rows from API OUT" />}
@@ -641,7 +635,7 @@ function App() {
                   baht(h.price),
                   baht(h.value),
                   <span className={h.gl >= 0 ? "good" : "bad"}>{h.gl >= 0 ? "+" : ""}{baht(h.gl)}</span>,
-                  <span className={h.glPct >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{percent(h.glPct)}</span>,
+                  <span className={h.glPct >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{fmt(h.glPct)}%</span>,
                 ])}
               />
             </Panel>
