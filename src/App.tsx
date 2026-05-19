@@ -17,7 +17,7 @@ const EMPTY_DATA = {
   decisionAnalytics: { trend: [], status: [] },
 };
 
-const PHASES = ["Build", "Accumulate", "Income"];
+const PHASES = ["Build", "Balance", "Income"];
 const SOURCES = ["All", "Dividend", "Growth"];
 const ORDER_TABS = ["All", "BUY", "SELL"];
 const STOCK_STATUS_OPTIONS = ["EXCLUDE", "FADE IN", "FADE OUT", "OK", "WATCH"];
@@ -870,7 +870,7 @@ function App() {
                   <div className="phase-stack">
                     {[
                       ["Build", 40, 60],
-                      ["Accumulate", 50, 50],
+                      ["Balance", 50, 50],
                       ["Income", 70, 30],
                     ].map(([name, div, growth]) => (
                       <button
