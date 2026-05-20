@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbwz-WTC9BtckNA5bWLWMIhYaKnk1pgNQZBwCYDFX-okxY-raMsSofN5nobPODMnO0Quvg/exec";
+  "https://script.google.com/macros/s/AKfycbxkM1aiUcS_LGVZ4bMc_6n4EGVsELP7_CaKrjQsZnzTtKysIeRGNRr94n7dr7nO4gHwlQ/exec";
 
 const EMPTY_DATA = {
   summary: {},
@@ -875,11 +875,15 @@ function App() {
 
                 <Panel title="Phase Controls">
                   <div className="phase-stack">
-                    {[
-                      ["Build", 40, 60],
-                      ["Balance", 50, 50],
-                      ["Income", 70, 30],
-                    ].map(([name, div, growth]) => (
+                    {(data.phaseControl?.phases || [
+                      { phase: "Build",   dividend: 0.4, growth: 0.6 },
+                      { phase: "Balance", dividend: 0.5, growth: 0.5 },
+                      { phase: "Income",  dividend: 0.7, growth: 0.3 },
+                    ]).map((p: any) => {
+                      const name = p.phase;
+                      const div = Math.round(pct(p.dividend));
+                      const growth = Math.round(pct(p.growth));
+                      return (
                       <button
                         key={name}
                         className={settings.phase === name ? "phase-card active" : "phase-card"}
@@ -889,7 +893,7 @@ function App() {
                         <span>DIV {div}%</span>
                         <span>GROWTH {growth}%</span>
                       </button>
-                    ))}
+                    );})}
                   </div>
                 </Panel>
               </div>
