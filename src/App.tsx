@@ -646,9 +646,9 @@ function App() {
           {[
             ["dashboard", "Dashboard"],
             ["progress", "Progress"],
-            ["allocation", "Allocation"],
             ["orders", "Orders"],
             ["settings", "Settings"],
+            ["allocation", "Allocation"],
             ["stockList", "Stock List"],
           ].map(([id, label]) => (
             <button key={id} className={tab === id ? "tab active" : "tab"} onClick={() => setTab(id)}>
@@ -1460,7 +1460,7 @@ const styles = `
 .perf-contrib-item.bad{border-left:3px solid #ff4d6d}
 .perf-contrib-label{display:block;font-size:10px;letter-spacing:.18em;color:#4a6a8a;text-transform:uppercase;font-weight:900;margin-bottom:6px}
 .perf-contrib-item b{font-family:Consolas,monospace;font-size:22px;color:#e8f1ff}
-@media(max-width:1200px){.order-card-grid,.manual-grid{grid-template-columns:1fr}.manual-note,.manual-save{grid-column:auto}.allocation-donut-wrap{grid-template-columns:1fr}.cards.six{grid-template-columns:repeat(3,1fr)}.grid.two,.settings-grid,.trade-grid,.decision-grid{grid-template-columns:1fr}.decision-metrics{grid-template-columns:repeat(2,1fr)}.tabs{justify-content:flex-start;overflow:auto}.topbar{padding:0 18px}.brand{min-width:auto}}@media(max-width:760px){.topbar{height:auto;align-items:flex-start;flex-direction:column;padding:18px}.tabs{width:100%;justify-content:flex-start}.shell{padding:18px}.cards.six,.cards.four,.form-grid,.decision-metrics{grid-template-columns:1fr}.market-strip,.portfolio-head{align-items:flex-start;flex-direction:column}.toolbar input{min-width:100%;width:100%}.portfolio-actions{width:100%;flex-direction:column}.portfolio-actions button,.trade-save{width:100%}}
+@media(max-width:1200px){.order-card-grid,.manual-grid{grid-template-columns:1fr}.manual-note,.manual-save{grid-column:auto}.allocation-donut-wrap{grid-template-columns:1fr}.cards.six{grid-template-columns:repeat(3,1fr)}.grid.two,.settings-grid,.trade-grid,.decision-grid{grid-template-columns:1fr}.decision-metrics{grid-template-columns:repeat(2,1fr)}.tabs{justify-content:flex-start;overflow:auto}.topbar{padding:0 18px}.brand{min-width:auto}.perf-row-head,.perf-row{grid-template-columns:100px 1fr 1fr 1fr 1fr 1fr;font-size:12px}.cards.four{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.topbar{height:auto;align-items:flex-start;flex-direction:column;padding:18px}.tabs{width:100%;justify-content:flex-start;flex-wrap:wrap}.shell{padding:14px 12px 60px}.cards.six,.cards.four,.form-grid,.decision-metrics{grid-template-columns:1fr}.market-strip,.portfolio-head{align-items:flex-start;flex-direction:column}.toolbar input{min-width:100%;width:100%}.portfolio-actions{width:100%;flex-direction:column}.portfolio-actions button,.trade-save{width:100%}.perf-breakdown{padding:12px 14px 0}.perf-row-head{display:none}.perf-row{grid-template-columns:1fr 1fr;gap:8px;padding:12px 0;font-size:12px}.perf-row span:first-child{grid-column:1/-1;margin-bottom:4px}.perf-contributors{grid-template-columns:1fr;padding:12px 14px}.perf-section-label{padding:0 2px 6px;font-size:10px}.bars{padding:12px 14px}.barrow{grid-template-columns:60px 1fr 70px}.table-wrap{-webkit-overflow-scrolling:touch}table{min-width:600px}th,td{padding:10px 12px;font-size:12px}.metric{min-height:90px;padding:14px 16px}.metric-value{font-size:20px}.toolbar{padding:10px 12px;gap:8px}.toolbar select{width:100%}}
 `;
 
 export default App;
