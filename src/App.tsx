@@ -335,6 +335,15 @@ function App() {
   const worstContributor = perfEngine.worstContributor ||
     (holdings.length > 0 ? holdings.reduce((a, b) => (b.gl < a.gl ? b : a), holdings[0])?.symbol : "-");
 
+  const bestDividend = perfEngine.bestDividend ||
+    (divHoldings.length > 0 ? divHoldings.reduce((a, b) => (b.gl > a.gl ? b : a), divHoldings[0])?.symbol : "-");
+  const worstDividend = perfEngine.worstDividend ||
+    (divHoldings.length > 0 ? divHoldings.reduce((a, b) => (b.gl < a.gl ? b : a), divHoldings[0])?.symbol : "-");
+  const bestGrowth = perfEngine.bestGrowth ||
+    (growthHoldings.length > 0 ? growthHoldings.reduce((a, b) => (b.gl > a.gl ? b : a), growthHoldings[0])?.symbol : "-");
+  const worstGrowth = perfEngine.worstGrowth ||
+    (growthHoldings.length > 0 ? growthHoldings.reduce((a, b) => (b.gl < a.gl ? b : a), growthHoldings[0])?.symbol : "-");
+
   // ── Allocation Intelligent Engine ──
   const allocationEngine: any[] = data.allocationEngine || [];
 
@@ -986,57 +995,47 @@ function App() {
               <Metric title="GROWTH P/L" value={`${growthPL >= 0 ? "+" : ""}${baht(growthPL)}`} sub={`${growthPLPct >= 0 ? "+" : ""}${percent(growthPLPct)} vs cost`} color={growthPL >= 0 ? "blue" : "red"} />
             </div>
 
-            <div className="grid two">
-              <Panel title="Performance Breakdown">
-                <div className="perf-breakdown">
-                  <div className="perf-row-head">
-                    <span>Type</span><span>Value</span><span>Cost</span><span>P/L</span><span>P/L %</span><span>Weight</span>
-                  </div>
-                  <div className="perf-row perf-dividend">
-                    <span><i className="perf-dot" style={{background:"#20d6a2"}} />Dividend</span>
-                    <span>{baht(divValue)}</span>
-                    <span>{baht(divCost)}</span>
-                    <span className={divPL >= 0 ? "good" : "bad"}>{divPL >= 0 ? "+" : ""}{baht(divPL)}</span>
-                    <span className={divPL >= 0 ? "good" : "bad"}>{divPL >= 0 ? "+" : ""}{percent(divPLPct)}</span>
-                    <span>{percent(dividendWeight)}</span>
-                  </div>
-                  <div className="perf-row perf-growth">
-                    <span><i className="perf-dot" style={{background:"#5aa2ff"}} />Growth</span>
-                    <span>{baht(growthValue)}</span>
-                    <span>{baht(growthCost)}</span>
-                    <span className={growthPL >= 0 ? "good" : "bad"}>{growthPL >= 0 ? "+" : ""}{baht(growthPL)}</span>
-                    <span className={growthPL >= 0 ? "good" : "bad"}>{growthPL >= 0 ? "+" : ""}{percent(growthPLPct)}</span>
-                    <span>{percent(growthWeight)}</span>
-                  </div>
+            <Panel title="Performance Breakdown">
+              <div className="perf-breakdown">
+                <div className="perf-row-head">
+                  <span>Type</span><span>Value</span><span>Cost</span><span>P/L</span><span>P/L %</span><span>Weight</span>
                 </div>
-                <div className="perf-contributors">
-                  <div className="perf-contrib-item good">
-                    <span className="perf-contrib-label">BEST CONTRIBUTOR</span>
-                    <b>{bestContributor}</b>
-                  </div>
-                  <div className="perf-contrib-item bad">
-                    <span className="perf-contrib-label">WORST CONTRIBUTOR</span>
-                    <b>{worstContributor}</b>
-                  </div>
+                <div className="perf-row perf-dividend">
+                  <span><i className="perf-dot" style={{background:"#20d6a2"}} />Dividend</span>
+                  <span>{baht(divValue)}</span>
+                  <span>{baht(divCost)}</span>
+                  <span className={divPL >= 0 ? "good" : "bad"}>{divPL >= 0 ? "+" : ""}{baht(divPL)}</span>
+                  <span className={divPL >= 0 ? "good" : "bad"}>{divPL >= 0 ? "+" : ""}{percent(divPLPct)}</span>
+                  <span>{percent(dividendWeight)}</span>
                 </div>
-              </Panel>
-
-              <Panel title="P/L by Position">
-                <div className="bars">
-                  {holdings.map((h) => (
-                    <div className="barrow" key={h.symbol}>
-                      <span style={{display:"flex",alignItems:"center",gap:6}}>
-                        <i style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background: h.type==="Dividend"?"#20d6a2":"#5aa2ff",flexShrink:0}} />
-                        {h.symbol}
-                      </span>
-                      <div className="track"><i style={{ width: `${Math.min(Math.abs(h.glPct), 40) * 2.5}%`, background: h.gl >= 0 ? "#20d6a2" : "#ff4d6d" }} /></div>
-                      <b className={h.gl >= 0 ? "good" : "bad"}>{h.glPct >= 0 ? "+" : ""}{fmt(h.glPct)}%</b>
-                    </div>
-                  ))}
-                  {holdings.length === 0 && <Empty text="No holdings data" />}
+                <div className="perf-row perf-growth">
+                  <span><i className="perf-dot" style={{background:"#5aa2ff"}} />Growth</span>
+                  <span>{baht(perfGrowthValue)}</span>
+                  <span>{baht(growthCost)}</span>
+                  <span className={growthPL >= 0 ? "good" : "bad"}>{growthPL >= 0 ? "+" : ""}{baht(growthPL)}</span>
+                  <span className={growthPL >= 0 ? "good" : "bad"}>{growthPL >= 0 ? "+" : ""}{percent(growthPLPct)}</span>
+                  <span>{percent(growthWeight)}</span>
                 </div>
-              </Panel>
-            </div>
+              </div>
+              <div className="perf-contributors">
+                <div className="perf-contrib-item good">
+                  <span className="perf-contrib-label">BEST DIVIDEND</span>
+                  <b style={{color:"#20d6a2"}}>{bestDividend}</b>
+                </div>
+                <div className="perf-contrib-item bad" style={{borderLeftColor:"#ff4d6d"}}>
+                  <span className="perf-contrib-label">WORST DIVIDEND</span>
+                  <b style={{color:"#ff4d6d"}}>{worstDividend}</b>
+                </div>
+                <div className="perf-contrib-item good" style={{borderLeftColor:"#5aa2ff"}}>
+                  <span className="perf-contrib-label">BEST GROWTH</span>
+                  <b style={{color:"#5aa2ff"}}>{bestGrowth}</b>
+                </div>
+                <div className="perf-contrib-item bad" style={{borderLeftColor:"#ffb020"}}>
+                  <span className="perf-contrib-label">WORST GROWTH</span>
+                  <b style={{color:"#ffb020"}}>{worstGrowth}</b>
+                </div>
+              </div>
+            </Panel>
 
             <div className="perf-section-label" style={{marginTop:8}}>Decision Quality</div>
             <Panel title="Decision Analytics">
@@ -1454,13 +1453,13 @@ const styles = `
 .perf-row{display:grid;grid-template-columns:140px 1fr 1fr 1fr 1fr 1fr;gap:12px;padding:14px 0;border-bottom:1px solid #0d1e30;font-family:Consolas,monospace;font-size:14px;align-items:center}
 .perf-row span:first-child{display:flex;align-items:center;gap:8px;font-family:Inter,sans-serif;font-weight:900;color:#d9e8ff}
 .perf-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.perf-contributors{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:18px 26px}
+.perf-contributors{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:18px 26px}
 .perf-contrib-item{background:#071321;border:1px solid #173151;border-radius:8px;padding:14px 18px}
 .perf-contrib-item.good{border-left:3px solid #20d6a2}
 .perf-contrib-item.bad{border-left:3px solid #ff4d6d}
 .perf-contrib-label{display:block;font-size:10px;letter-spacing:.18em;color:#4a6a8a;text-transform:uppercase;font-weight:900;margin-bottom:6px}
 .perf-contrib-item b{font-family:Consolas,monospace;font-size:22px;color:#e8f1ff}
-@media(max-width:1200px){.order-card-grid,.manual-grid{grid-template-columns:1fr}.manual-note,.manual-save{grid-column:auto}.allocation-donut-wrap{grid-template-columns:1fr}.cards.six{grid-template-columns:repeat(3,1fr)}.grid.two,.settings-grid,.trade-grid,.decision-grid{grid-template-columns:1fr}.decision-metrics{grid-template-columns:repeat(2,1fr)}.tabs{justify-content:flex-start;overflow:auto}.topbar{padding:0 18px}.brand{min-width:auto}.perf-row-head,.perf-row{grid-template-columns:100px 1fr 1fr 1fr 1fr 1fr;font-size:12px}.cards.four{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.topbar{height:auto;align-items:flex-start;flex-direction:column;padding:18px}.tabs{width:100%;justify-content:flex-start;flex-wrap:wrap}.shell{padding:14px 12px 60px}.cards.six,.cards.four,.form-grid,.decision-metrics{grid-template-columns:1fr}.market-strip,.portfolio-head{align-items:flex-start;flex-direction:column}.toolbar input{min-width:100%;width:100%}.portfolio-actions{width:100%;flex-direction:column}.portfolio-actions button,.trade-save{width:100%}.perf-breakdown{padding:12px 14px 0}.perf-row-head{display:none}.perf-row{grid-template-columns:1fr 1fr;gap:8px;padding:12px 0;font-size:12px}.perf-row span:first-child{grid-column:1/-1;margin-bottom:4px}.perf-contributors{grid-template-columns:1fr;padding:12px 14px}.perf-section-label{padding:0 2px 6px;font-size:10px}.bars{padding:12px 14px}.barrow{grid-template-columns:60px 1fr 70px}.table-wrap{-webkit-overflow-scrolling:touch}table{min-width:600px}th,td{padding:10px 12px;font-size:12px}.metric{min-height:90px;padding:14px 16px}.metric-value{font-size:20px}.toolbar{padding:10px 12px;gap:8px}.toolbar select{width:100%}}
+@media(max-width:1200px){.order-card-grid,.manual-grid{grid-template-columns:1fr}.manual-note,.manual-save{grid-column:auto}.allocation-donut-wrap{grid-template-columns:1fr}.cards.six{grid-template-columns:repeat(3,1fr)}.grid.two,.settings-grid,.trade-grid,.decision-grid{grid-template-columns:1fr}.decision-metrics{grid-template-columns:repeat(2,1fr)}.tabs{justify-content:flex-start;overflow:auto}.topbar{padding:0 18px}.brand{min-width:auto}.perf-row-head,.perf-row{grid-template-columns:100px 1fr 1fr 1fr 1fr 1fr;font-size:12px}.cards.four{grid-template-columns:repeat(2,1fr)}.perf-contributors{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.topbar{height:auto;align-items:flex-start;flex-direction:column;padding:18px}.tabs{width:100%;justify-content:flex-start;flex-wrap:wrap}.shell{padding:14px 12px 60px}.cards.six,.cards.four,.form-grid,.decision-metrics{grid-template-columns:1fr}.market-strip,.portfolio-head{align-items:flex-start;flex-direction:column}.toolbar input{min-width:100%;width:100%}.portfolio-actions{width:100%;flex-direction:column}.portfolio-actions button,.trade-save{width:100%}.perf-breakdown{padding:12px 14px 0}.perf-row-head{display:none}.perf-row{grid-template-columns:1fr 1fr;gap:8px;padding:12px 0;font-size:12px}.perf-row span:first-child{grid-column:1/-1;margin-bottom:4px}.perf-contributors{grid-template-columns:1fr 1fr;padding:12px 14px}.perf-section-label{padding:0 2px 6px;font-size:10px}.bars{padding:12px 14px}.barrow{grid-template-columns:60px 1fr 70px}.table-wrap{-webkit-overflow-scrolling:touch}table{min-width:600px}th,td{padding:10px 12px;font-size:12px}.metric{min-height:90px;padding:14px 16px}.metric-value{font-size:20px}.toolbar{padding:10px 12px;gap:8px}.toolbar select{width:100%}}
 `;
 
 export default App;
