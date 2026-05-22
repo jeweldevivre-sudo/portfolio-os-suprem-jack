@@ -313,18 +313,18 @@ function App() {
     });
   })();
 
-  // ── Performance Engine (from holdings + performanceEngine sheet data) ──
+  // ── Performance Engine (reuses dividendValue / growthValue already declared above) ──
   const perfEngine = data.performanceEngine || {};
   const divHoldings = holdings.filter((h) => h.type === "Dividend");
   const growthHoldings = holdings.filter((h) => h.type === "Growth");
 
-  const divValue = n(perfEngine.dividendValue) || divHoldings.reduce((s, h) => s + h.value, 0);
+  const divValue = dividendValue; // reuse from summary section above
   const divCost = n(perfEngine.dividendCostValue) || divHoldings.reduce((s, h) => s + h.costValue, 0);
   const divPL = n(perfEngine.dividendPL) || divHoldings.reduce((s, h) => s + h.gl, 0);
   const divPLPct = n(perfEngine.dividendPLPct) || (divCost > 0 ? (divPL / divCost) * 100 : 0);
   const divCount = n(perfEngine.dividendCount) || divHoldings.length;
 
-  const growthValue = n(perfEngine.growthValue) || growthHoldings.reduce((s, h) => s + h.value, 0);
+  const perfGrowthValue = growthValue; // reuse from summary section above
   const growthCost = n(perfEngine.growthCostValue) || growthHoldings.reduce((s, h) => s + h.costValue, 0);
   const growthPL = n(perfEngine.growthPL) || growthHoldings.reduce((s, h) => s + h.gl, 0);
   const growthPLPct = n(perfEngine.growthPLPct) || (growthCost > 0 ? (growthPL / growthCost) * 100 : 0);
