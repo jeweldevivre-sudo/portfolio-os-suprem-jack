@@ -63,7 +63,6 @@ const percent = (value: any, digits = 2) => `${fmt(pct(value), digits)}%`;
 
 const hasValue = (value: any) => value !== null && value !== undefined && value !== "";
 
-const displayNumber = (value: any, digits = 0) => hasValue(value) ? fmt(value, digits) : "-";
 const displayPercent = (value: any, digits = 2) => hasValue(value) ? percent(value, digits) : "-";
 
 const stockField = (row: any, keys: string[]) => {
@@ -75,19 +74,6 @@ const stockField = (row: any, keys: string[]) => {
 
 const normalizeStatus = (value: any) => String(value || "OK").trim().toUpperCase();
 
-const normalizeBias = (value: any) => String(value || "").trim().toUpperCase();
-
-const normalizeConfidence = (value: any) => String(value || "").trim().toUpperCase();
-
-const normalizeStockStatusClass = (value: any) => clsFor(normalizeStatus(value));
-
-const normalizeLearningClass = (value: any) => {
-  const text = String(value || "").toUpperCase();
-  if (text.includes("FAVOR") || text.includes("HIGH")) return "good";
-  if (text.includes("AVOID")) return "bad";
-  if (text.includes("LOW DATA") || text.includes("NO DATA") || text.includes("LOW")) return "muted";
-  return "amber";
-};
 
 const normalizeType = (...values: any[]) => {
   for (const value of values) {
@@ -511,15 +497,10 @@ function App() {
   });
 
   const filteredStocks = stockList.filter((stock: any) => {
-    const manualStatus = stockField(stock, ["manualStatus", "Manual Status", "status", "stockListStatus"]);
-    const note = stockField(stock, ["universeNote", "note", "Note"]);
-    const learningNote = stockField(stock, ["learningNote", "Learning Note"]);
-    const historicalBias = stockField(stock, ["historicalBias", "Historical Bias"]);
-    const confidence = stockField(stock, ["confidence", "Confidence"]);
-    const text = `${stock.assetCode || stock.symbol} ${stock.source} ${stock.sector} ${stock.leaderFlag} ${note} ${manualStatus} ${learningNote} ${historicalBias} ${confidence}`.toLowerCase();
+    const text = `${stock.assetCode || stock.symbol} ${stock.source} ${stock.sector} ${stock.leaderFlag} ${stock.universeNote} ${stock.manualStatus}`.toLowerCase();
     const matchesQuery = !stockQuery || text.includes(stockQuery.toLowerCase());
     const matchesSource = stockSource === "All" || normalizeType(stock.source) === stockSource;
-    const statusText = String(manualStatus || note || "").toUpperCase();
+    const statusText = String(stock.manualStatus || stock.universeNote || "").toUpperCase();
     const matchesStatus = stockStatus === "All" || statusText.includes(stockStatus.toUpperCase());
     return matchesQuery && matchesSource && matchesStatus;
   });
@@ -944,32 +925,24 @@ function App() {
                     <th>SECTOR</th>
                     <th>NOTE</th>
                     <th>TARGET WT</th>
-                    <th>CASES</th>
                     <th>WIN RATE</th>
                     <th>AVG RETURN</th>
                     <th>PRICE SIGNAL</th>
-                    <th>CONFIDENCE</th>
-                    <th>BIAS</th>
-                    <th>LEARNING NOTE</th>
                     <th>STATUS</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredStocks.length === 0 ? (
-                    <tr><td colSpan={13}><Empty text="No stock list rows" /></td></tr>
+                    <tr><td colSpan={9}><Empty text="No stock list rows" /></td></tr>
                   ) : filteredStocks.map((s: any) => {
-                    const symbol = stockField(s, ["symbol", "assetCode", "Asset Code"]);
+                    const symbol = stockField(s, ["symbol", "assetCode", "Asset Code", "asset"]);
                     const source = stockField(s, ["source", "type", "Source"]);
                     const sector = stockField(s, ["sector", "Sector"]);
                     const note = stockField(s, ["universeNote", "note", "Note"]);
-                    const targetWeight = stockField(s, ["targetWeight", "Target Weight"]);
-                    const similarCases = stockField(s, ["similarCases", "Similar Cases"]);
+                    const targetWeight = stockField(s, ["targetWeight", "Target Weight", "targetWt", "Target WT"]);
                     const winRate = stockField(s, ["winRate", "Win Rate"]);
                     const avgReturn = stockField(s, ["avgReturn", "Avg Return", "averageReturn"]);
                     const priceSignal = stockField(s, ["priceSignal", "Price Signal", "plPct", "P/L %"]);
-                    const confidence = normalizeConfidence(stockField(s, ["confidence", "Confidence"]));
-                    const historicalBias = normalizeBias(stockField(s, ["historicalBias", "Historical Bias"]));
-                    const learningNote = stockField(s, ["learningNote", "Learning Note"]);
                     const manualStatus = normalizeStatus(stockField(s, ["manualStatus", "Manual Status", "status", "stockListStatus"]));
                     return (
                     <tr key={symbol || s.symbol || s.assetCode}>
@@ -978,16 +951,12 @@ function App() {
                       <td>{sector || "-"}</td>
                       <td>{note || "-"}</td>
                       <td>{displayPercent(targetWeight)}</td>
-                      <td>{displayNumber(similarCases, 0)}</td>
                       <td>{displayPercent(winRate)}</td>
                       <td><span className={!hasValue(avgReturn) ? "muted" : n(avgReturn) >= 0 ? "good" : "bad"}>{displayPercent(avgReturn)}</span></td>
                       <td><span className={!hasValue(priceSignal) ? "muted" : n(priceSignal) >= 0 ? "good" : "bad"}>{displayPercent(priceSignal)}</span></td>
-                      <td><span className={normalizeLearningClass(confidence)}>{confidence || "-"}</span></td>
-                      <td><span className={normalizeLearningClass(historicalBias)}>{historicalBias || "-"}</span></td>
-                      <td style={{maxWidth:260,whiteSpace:"normal",lineHeight:1.4,fontSize:12,color:"#7894ba"}}>{learningNote || "-"}</td>
                       <td>
                         <select
-                          className={`status-select ${normalizeStockStatusClass(manualStatus)}`}
+                          className={`status-select ${clsFor(manualStatus)}`}
                           value={manualStatus}
                           disabled={saving}
                           onChange={(e) => saveStockManualStatus(s, e.target.value)}
