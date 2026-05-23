@@ -75,10 +75,27 @@ const stockSortNumber = (value: any) => {
   return Number.isFinite(number) ? number : null;
 };
 
+const normalizeKey = (value: any) =>
+  String(value || "")
+    .replace(/[\s_\-/%]/g, "")
+    .toLowerCase();
+
 const stockField = (row: any, keys: string[]) => {
+  if (!row) return "";
+
+  // 1) Exact key match first
   for (const key of keys) {
-    if (row && hasValue(row[key])) return row[key];
+    if (hasValue(row[key])) return row[key];
   }
+
+  // 2) Flexible key match: priceSignal / Price Signal / price_signal / PRICE SIGNAL
+  const rowKeys = Object.keys(row);
+  for (const key of keys) {
+    const wanted = normalizeKey(key);
+    const found = rowKeys.find((rowKey) => normalizeKey(rowKey) === wanted);
+    if (found && hasValue(row[found])) return row[found];
+  }
+
   return "";
 };
 
