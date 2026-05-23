@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbyRY2HaHzZmgnlBY9jZxcQQQrE2qjQtuHdQLQUalAOpnAo-YeAv1amY1Osy0qpQmFgdiA/exec";
+  "https://script.google.com/macros/s/AKfycbzNH2hd0LnOUYhpjWYpcbIJYj_ZivvHRlsVErUOqUevyO36CMId8u2dTioElLLoJHLERw/exec";
 
 const EMPTY_DATA = {
   summary: {},
@@ -524,6 +524,12 @@ function App() {
   });
 
   const filteredStocks = useMemo(() => {
+    const holdingSymbols = new Set(
+      (holdings || [])
+        .map((h: any) => String(h.symbol || h.assetCode || "").toUpperCase())
+        .filter(Boolean)
+    );
+
     const rows = stockList.filter((stock: any) => {
       const text = `${stock.assetCode || stock.symbol} ${stock.source} ${stock.sector} ${stock.leaderFlag} ${stock.universeNote} ${stock.manualStatus}`.toLowerCase();
       const matchesQuery = !stockQuery || text.includes(stockQuery.toLowerCase());
@@ -534,19 +540,26 @@ function App() {
     });
 
     return [...rows].sort((a: any, b: any) => {
-      const aSignal = stockSortNumber(stockField(a, ["priceSignal", "Price Signal", "plPct", "P/L %"]));
-      const bSignal = stockSortNumber(stockField(b, ["priceSignal", "Price Signal", "plPct", "P/L %"]));
+      const aSymbol = String(stockField(a, ["symbol", "assetCode", "Asset Code", "asset"])).toUpperCase();
+      const bSymbol = String(stockField(b, ["symbol", "assetCode", "Asset Code", "asset"])).toUpperCase();
+      const aIsHolding = holdingSymbols.has(aSymbol) ? 1 : 0;
+      const bIsHolding = holdingSymbols.has(bSymbol) ? 1 : 0;
 
-      if (aSignal === null && bSignal === null) {
-        const aSymbol = String(stockField(a, ["symbol", "assetCode", "Asset Code", "asset"]));
-        const bSymbol = String(stockField(b, ["symbol", "assetCode", "Asset Code", "asset"]));
-        return aSymbol.localeCompare(bSymbol);
-      }
+      // 1) Holdings first, so the stocks that affect the real portfolio stay on top.
+      if (aIsHolding !== bIsHolding) return bIsHolding - aIsHolding;
+
+      // 2) Within each group, sort by Price Signal from highest to lowest.
+      const aSignal = stockSortNumber(stockField(a, ["priceSignal", "Price Signal", "price_signal", "PRICE SIGNAL"]));
+      const bSignal = stockSortNumber(stockField(b, ["priceSignal", "Price Signal", "price_signal", "PRICE SIGNAL"]));
+
+      if (aSignal === null && bSignal === null) return aSymbol.localeCompare(bSymbol);
       if (aSignal === null) return 1;
       if (bSignal === null) return -1;
-      return bSignal - aSignal;
+      if (bSignal !== aSignal) return bSignal - aSignal;
+
+      return aSymbol.localeCompare(bSymbol);
     });
-  }, [stockList, stockQuery, stockSource, stockStatus]);
+  }, [stockList, holdings, stockQuery, stockSource, stockStatus]);
 
   const filteredOrders = orders.filter((order: any) => orderFilter === "All" || order.actionType === orderFilter);
 
