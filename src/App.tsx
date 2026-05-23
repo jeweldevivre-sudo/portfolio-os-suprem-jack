@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbxaGEnr_EK0Djvl7Pxo7tMKWM8Cme_U_w5n0xjyW9-VOvU5Gv_L4Pmd3wzY1zwmweEOyA/exec";
+  "https://script.google.com/macros/s/AKfycbzNH2hd0LnOUYhpjWYpcbIJYj_ZivvHRlsVErUOqUevyO36CMId8u2dTioElLLoJHLERw/exec";
 
 const EMPTY_DATA = {
   summary: {},
@@ -64,6 +64,8 @@ const percent = (value: any, digits = 2) => `${fmt(pct(value), digits)}%`;
 const hasValue = (value: any) => value !== null && value !== undefined && value !== "";
 
 const displayPercent = (value: any, digits = 2) => hasValue(value) ? percent(value, digits) : "-";
+
+const displayStockPercent = (value: any, digits = 2) => hasValue(value) ? `${fmt(n(value), digits)}%` : "-";
 
 const stockField = (row: any, keys: string[]) => {
   for (const key of keys) {
@@ -496,14 +498,26 @@ function App() {
     return matchSource && matchSignal;
   });
 
-  const filteredStocks = stockList.filter((stock: any) => {
-    const text = `${stock.assetCode || stock.symbol} ${stock.source} ${stock.sector} ${stock.leaderFlag} ${stock.universeNote} ${stock.manualStatus}`.toLowerCase();
-    const matchesQuery = !stockQuery || text.includes(stockQuery.toLowerCase());
-    const matchesSource = stockSource === "All" || normalizeType(stock.source) === stockSource;
-    const statusText = String(stock.manualStatus || stock.universeNote || "").toUpperCase();
-    const matchesStatus = stockStatus === "All" || statusText.includes(stockStatus.toUpperCase());
-    return matchesQuery && matchesSource && matchesStatus;
-  });
+  const filteredStocks = stockList
+    .filter((stock: any) => {
+      const text = `${stock.assetCode || stock.symbol} ${stock.source} ${stock.sector} ${stock.leaderFlag} ${stock.universeNote} ${stock.manualStatus}`.toLowerCase();
+      const matchesQuery = !stockQuery || text.includes(stockQuery.toLowerCase());
+      const matchesSource = stockSource === "All" || normalizeType(stock.source) === stockSource;
+      const statusText = String(stock.manualStatus || stock.universeNote || "").toUpperCase();
+      const matchesStatus = stockStatus === "All" || statusText.includes(stockStatus.toUpperCase());
+      return matchesQuery && matchesSource && matchesStatus;
+    })
+    .sort((a: any, b: any) => {
+      const aSignal = stockField(a, ["priceSignal", "Price Signal", "plPct", "P/L %"]);
+      const bSignal = stockField(b, ["priceSignal", "Price Signal", "plPct", "P/L %"]);
+      const aHasSignal = hasValue(aSignal);
+      const bHasSignal = hasValue(bSignal);
+
+      if (aHasSignal && bHasSignal) return n(bSignal) - n(aSignal);
+      if (aHasSignal) return -1;
+      if (bHasSignal) return 1;
+      return String(a.assetCode || a.symbol || "").localeCompare(String(b.assetCode || b.symbol || ""));
+    });
 
   const filteredOrders = orders.filter((order: any) => orderFilter === "All" || order.actionType === orderFilter);
 
@@ -950,10 +964,10 @@ function App() {
                       <td><Badge value={source} /></td>
                       <td>{sector || "-"}</td>
                       <td>{note || "-"}</td>
-                      <td>{displayPercent(targetWeight)}</td>
-                      <td>{displayPercent(winRate)}</td>
-                      <td><span className={!hasValue(avgReturn) ? "muted" : n(avgReturn) >= 0 ? "good" : "bad"}>{displayPercent(avgReturn)}</span></td>
-                      <td><span className={!hasValue(priceSignal) ? "muted" : n(priceSignal) >= 0 ? "good" : "bad"}>{displayPercent(priceSignal)}</span></td>
+                      <td>{displayStockPercent(targetWeight)}</td>
+                      <td>{displayStockPercent(winRate)}</td>
+                      <td><span className={!hasValue(avgReturn) ? "muted" : n(avgReturn) >= 0 ? "good" : "bad"}>{displayStockPercent(avgReturn)}</span></td>
+                      <td><span className={!hasValue(priceSignal) ? "muted" : n(priceSignal) >= 0 ? "good" : "bad"}>{displayStockPercent(priceSignal)}</span></td>
                       <td>
                         <select
                           className={`status-select ${clsFor(manualStatus)}`}
