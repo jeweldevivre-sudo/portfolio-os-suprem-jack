@@ -548,8 +548,8 @@ function App() {
       // Holdings first, then sort by Price Signal highest to lowest inside each group.
       if (aIsHolding !== bIsHolding) return bIsHolding - aIsHolding;
 
-      const aSignal = stockSortNumber(stockField(a, ["priceSignal", "Price Signal", "price_signal", "PRICE SIGNAL", "plPct", "P/L %"]));
-      const bSignal = stockSortNumber(stockField(b, ["priceSignal", "Price Signal", "price_signal", "PRICE SIGNAL", "plPct", "P/L %"]));
+      const aSignal = stockSortNumber(stockField(a, ["priceSignal", "price_signal", "Price Signal", "PRICE SIGNAL", "pricesignal", "plPct", "P/L %", "P/L%"]));
+      const bSignal = stockSortNumber(stockField(b, ["priceSignal", "price_signal", "Price Signal", "PRICE SIGNAL", "pricesignal", "plPct", "P/L %", "P/L%"]));
 
       if (aSignal === null && bSignal === null) return aSymbol.localeCompare(bSymbol);
       if (aSignal === null) return 1;
@@ -994,9 +994,9 @@ function App() {
                     const sector = stockField(s, ["sector", "Sector"]);
                     const note = stockField(s, ["universeNote", "note", "Note"]);
                     const targetWeight = stockField(s, ["targetWeight", "Target Weight", "targetWt", "Target WT"]);
-                    const winRate = stockField(s, ["winRate", "Win Rate"]);
-                    const avgReturn = stockField(s, ["avgReturn", "Avg Return", "averageReturn"]);
-                    const priceSignal = stockField(s, ["priceSignal", "Price Signal", "plPct", "P/L %"]);
+                    const winRate = stockField(s, ["winRate", "win_rate", "Win Rate", "WIN RATE", "winrate"]);
+                    const avgReturn = stockField(s, ["avgReturn", "avg_return", "Avg Return", "AVG RETURN", "averageReturn", "averagereturn"]);
+                    const priceSignal = stockField(s, ["priceSignal", "price_signal", "Price Signal", "PRICE SIGNAL", "pricesignal", "plPct", "P/L %", "P/L%"]);
                     const manualStatus = normalizeStatus(stockField(s, ["manualStatus", "Manual Status", "status", "stockListStatus"]));
                     return (
                     <tr key={symbol || s.symbol || s.assetCode}>
