@@ -65,6 +65,16 @@ const hasValue = (value: any) => value !== null && value !== undefined && value 
 
 const displayPercent = (value: any, digits = 2) => hasValue(value) ? percent(value, digits) : "-";
 
+// Stock List API already sends percent values as display-scale numbers (e.g. 0.54 = 0.54%).
+// Do not run these through pct(), or 0.54% becomes 54.00%.
+const stockDisplayPercent = (value: any, digits = 2) => hasValue(value) ? `${fmt(n(value), digits)}%` : "-";
+
+const stockSortNumber = (value: any) => {
+  if (!hasValue(value)) return null;
+  const number = n(value);
+  return Number.isFinite(number) ? number : null;
+};
+
 const stockField = (row: any, keys: string[]) => {
   for (const key of keys) {
     if (row && hasValue(row[key])) return row[key];
@@ -496,27 +506,30 @@ function App() {
     return matchSource && matchSignal;
   });
 
-  const filteredStocks = stockList
-    .filter((stock: any) => {
+  const filteredStocks = useMemo(() => {
+    const rows = stockList.filter((stock: any) => {
       const text = `${stock.assetCode || stock.symbol} ${stock.source} ${stock.sector} ${stock.leaderFlag} ${stock.universeNote} ${stock.manualStatus}`.toLowerCase();
       const matchesQuery = !stockQuery || text.includes(stockQuery.toLowerCase());
       const matchesSource = stockSource === "All" || normalizeType(stock.source) === stockSource;
       const statusText = String(stock.manualStatus || stock.universeNote || "").toUpperCase();
       const matchesStatus = stockStatus === "All" || statusText.includes(stockStatus.toUpperCase());
       return matchesQuery && matchesSource && matchesStatus;
-    })
-    .sort((a: any, b: any) => {
-      const aSignal = stockField(a, ["priceSignal", "Price Signal"]);
-      const bSignal = stockField(b, ["priceSignal", "Price Signal"]);
-      const aHasSignal = hasValue(aSignal);
-      const bHasSignal = hasValue(bSignal);
-
-      if (aHasSignal && bHasSignal) return pct(bSignal) - pct(aSignal);
-      if (aHasSignal) return -1;
-      if (bHasSignal) return 1;
-      return String(stockField(a, ["symbol", "assetCode", "Asset Code", "asset"]))
-        .localeCompare(String(stockField(b, ["symbol", "assetCode", "Asset Code", "asset"])));
     });
+
+    return [...rows].sort((a: any, b: any) => {
+      const aSignal = stockSortNumber(stockField(a, ["priceSignal", "Price Signal", "plPct", "P/L %"]));
+      const bSignal = stockSortNumber(stockField(b, ["priceSignal", "Price Signal", "plPct", "P/L %"]));
+
+      if (aSignal === null && bSignal === null) {
+        const aSymbol = String(stockField(a, ["symbol", "assetCode", "Asset Code", "asset"]));
+        const bSymbol = String(stockField(b, ["symbol", "assetCode", "Asset Code", "asset"]));
+        return aSymbol.localeCompare(bSymbol);
+      }
+      if (aSignal === null) return 1;
+      if (bSignal === null) return -1;
+      return bSignal - aSignal;
+    });
+  }, [stockList, stockQuery, stockSource, stockStatus]);
 
   const filteredOrders = orders.filter((order: any) => orderFilter === "All" || order.actionType === orderFilter);
 
@@ -963,10 +976,10 @@ function App() {
                       <td><Badge value={source} /></td>
                       <td>{sector || "-"}</td>
                       <td>{note || "-"}</td>
-                      <td>{displayPercent(targetWeight)}</td>
-                      <td>{displayPercent(winRate)}</td>
-                      <td><span className={!hasValue(avgReturn) ? "muted" : n(avgReturn) >= 0 ? "good" : "bad"}>{displayPercent(avgReturn)}</span></td>
-                      <td><span className={!hasValue(priceSignal) ? "muted" : n(priceSignal) >= 0 ? "good" : "bad"}>{displayPercent(priceSignal)}</span></td>
+                      <td>{stockDisplayPercent(targetWeight)}</td>
+                      <td>{stockDisplayPercent(winRate)}</td>
+                      <td><span className={!hasValue(avgReturn) ? "muted" : n(avgReturn) >= 0 ? "good" : "bad"}>{stockDisplayPercent(avgReturn)}</span></td>
+                      <td><span className={!hasValue(priceSignal) ? "muted" : n(priceSignal) >= 0 ? "good" : "bad"}>{stockDisplayPercent(priceSignal)}</span></td>
                       <td>
                         <select
                           className={`status-select ${clsFor(manualStatus)}`}
