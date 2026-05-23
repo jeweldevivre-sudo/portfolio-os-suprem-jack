@@ -347,36 +347,126 @@ function App() {
   // ── Allocation Intelligent Engine ──
   const allocationEngine: any[] = data.allocationEngine || [];
 
-  // Signal derivation from stockList fields (universeNote / manualStatus)
-  const deriveSignal = (s: any) => {
-    const status = String(s.manualStatus || "").toUpperCase();
-    const note = String(s.universeNote || "").toLowerCase();
-    if (status === "FADE IN" || note.includes("fade in")) return "INCREASE";
-    if (status === "FADE OUT" || note.includes("fade out")) return "REDUCE";
-    if (status === "EXCLUDE" || note.includes("excluded")) return "EXCLUDE";
-    if (status === "WATCH") return "WATCH";
-    return "MAINTAIN";
-  };
+  // ── Compute allocation rows: cross-reference holdings vs targets ──
+  // Priority: use allocationEngine from API if available (already computed by sheet)
+  // Fallback: compute from stockList + holdings with gap analysis
+  const allocationRows = useMemo(() => {
+    if (allocationEngine.length > 0) return allocationEngine;
 
-  // Fallback: build allocation rows from stockList when allocationEngine not in API
-  const allocationRows = allocationEngine.length > 0
-    ? allocationEngine
-    : stockList.map((s: any) => ({
-        assetCode: s.assetCode || s.symbol,
+    // Build a holdings lookup: assetCode → holding
+    const holdingMap: Record<string, any> = {};
+    holdings.forEach((h) => {
+      const code = String(h.symbol || h.assetCode || "").toUpperCase();
+      holdingMap[code] = h;
+    });
+
+    const WEIGHT_GAP_THRESHOLD = 2; // % gap before recommending action
+    const rows: any[] = [];
+
+    // 1. Process each stock in the universe
+    stockList.forEach((s: any) => {
+      const code = String(s.assetCode || s.symbol || "").toUpperCase();
+      const manualStatus = String(s.manualStatus || "OK").toUpperCase();
+
+      // Skip excluded stocks unless currently held
+      if (manualStatus === "EXCLUDE" && !holdingMap[code]) return;
+
+      const holding = holdingMap[code];
+      const targetWeight = pct(s.targetWeight || s.finalTargetWeight || 0);
+      const currentValue = holding ? n(holding.value) : 0;
+      const currentWeight = totalValue > 0 ? (currentValue / totalValue) * 100 : 0;
+      const weightGap = targetWeight - currentWeight; // positive = underweight, negative = overweight
+
+      // Derive signal from gap + manual status
+      let allocationSignal = "MAINTAIN";
+      let reason = "";
+
+      if (manualStatus === "EXCLUDE") {
+        allocationSignal = "EXCLUDE";
+        reason = "Manually excluded from universe";
+      } else if (manualStatus === "FADE OUT") {
+        allocationSignal = "REDUCE";
+        reason = "Fade out — reduce position gradually";
+      } else if (manualStatus === "FADE IN") {
+        allocationSignal = "INCREASE";
+        reason = "Fade in — build position gradually";
+      } else if (manualStatus === "WATCH") {
+        allocationSignal = "WATCH";
+        reason = "Under watch — no action until confirmed";
+      } else if (!holding && targetWeight > 0) {
+        allocationSignal = "INCREASE";
+        reason = `Not yet held · Target ${targetWeight.toFixed(2)}%`;
+      } else if (holding && targetWeight === 0) {
+        allocationSignal = "REDUCE";
+        reason = "Held position — no target weight assigned";
+      } else if (weightGap > WEIGHT_GAP_THRESHOLD) {
+        allocationSignal = "INCREASE";
+        reason = `Underweight by ${weightGap.toFixed(1)}% vs target`;
+      } else if (weightGap < -WEIGHT_GAP_THRESHOLD) {
+        allocationSignal = "REDUCE";
+        reason = `Overweight by ${Math.abs(weightGap).toFixed(1)}% vs target`;
+      } else if (holding) {
+        allocationSignal = "MAINTAIN";
+        reason = s.leaderFlag === "LEADER"
+          ? "Strategic core allocation — sector leader"
+          : "Within target range — hold position";
+      } else {
+        // Not held, no target weight → universe stock but not yet in scope
+        return; // skip — not actionable
+      }
+
+      rows.push({
+        assetCode: code,
         source: s.source,
         sector: s.sector,
-        stockListStatus: String(s.manualStatus || "OK").toUpperCase(),
+        stockListStatus: manualStatus,
         qualityTier: s.leaderFlag || "-",
-        strategicRole: s.strategicRole || "-",
-        allocationClass: s.allocationClass || "-",
-        finalTargetWeight: s.targetWeight || s.finalTargetWeight,
-        minTargetPct: s.minTargetPct,
-        maxTargetPct: s.maxTargetPct,
-        allocationSignal: s.allocationSignal || deriveSignal(s),
-        engineEligible: s.engineEligible || s.holdingStatus === "ACTIVE",
-        reason: s.reason || s.universeNote || "-",
-        holdingStatus: s.holdingStatus,
-      }));
+        finalTargetWeight: targetWeight || null,
+        currentWeight: currentWeight || null,
+        weightGap: (holding || targetWeight > 0) ? weightGap : null,
+        minTargetPct: pct(s.minTargetPct),
+        maxTargetPct: pct(s.maxTargetPct),
+        allocationSignal,
+        engineEligible: manualStatus === "OK" || manualStatus === "FADE IN",
+        reason,
+        holdingStatus: holding ? (manualStatus === "FADE OUT" ? "FADE OUT" : "ACTIVE") : "-",
+        currentValue,
+      });
+    });
+
+    // 2. Check for holdings NOT in stockList (orphan positions → should reduce)
+    holdings.forEach((h) => {
+      const code = String(h.symbol || h.assetCode || "").toUpperCase();
+      const inUniverse = stockList.some(
+        (s: any) => String(s.assetCode || s.symbol || "").toUpperCase() === code
+      );
+      if (!inUniverse) {
+        const currentWeight = totalValue > 0 ? (h.value / totalValue) * 100 : 0;
+        rows.push({
+          assetCode: code,
+          source: h.type || "-",
+          sector: "-",
+          stockListStatus: "WATCH",
+          qualityTier: "-",
+          finalTargetWeight: null,
+          currentWeight,
+          weightGap: -currentWeight,
+          minTargetPct: 0,
+          maxTargetPct: 0,
+          allocationSignal: "REDUCE",
+          engineEligible: false,
+          reason: "Held but not in stock universe — review",
+          holdingStatus: "ACTIVE",
+          currentValue: h.value,
+        });
+      }
+    });
+
+    // Sort: INCREASE first, REDUCE next, WATCH, MAINTAIN, EXCLUDE last
+    const signalOrder: Record<string, number> = { INCREASE: 0, REDUCE: 1, WATCH: 2, MAINTAIN: 3, EXCLUDE: 4 };
+    rows.sort((a, b) => (signalOrder[a.allocationSignal] ?? 5) - (signalOrder[b.allocationSignal] ?? 5));
+    return rows;
+  }, [allocationEngine, stockList, holdings, totalValue]);
 
   const filteredAllocation = allocationRows.filter((row: any) => {
     const matchSource = allocSource === "All" || normalizeType(row.source) === allocSource;
@@ -1105,33 +1195,38 @@ function App() {
                       <th>ASSET CODE</th>
                       <th>SOURCE</th>
                       <th>SECTOR</th>
-                      <th>STATUS</th>
-                      <th>HOLDING</th>
                       <th>QUALITY TIER</th>
+                      <th>HOLDING</th>
+                      <th>CURRENT WT</th>
                       <th>TARGET WT</th>
+                      <th>GAP</th>
                       <th>SIGNAL</th>
                       <th>NOTE / REASON</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredAllocation.length === 0 ? (
-                      <tr><td colSpan={9}><Empty text="No allocation data" /></td></tr>
+                      <tr><td colSpan={10}><Empty text="No allocation data" /></td></tr>
                     ) : filteredAllocation.map((row: any, i: number) => {
                       const signal = String(row.allocationSignal || "-").toUpperCase();
                       const signalCls = signal === "INCREASE" ? "good" : signal === "REDUCE" ? "bad" : signal === "EXCLUDE" ? "bad" : signal === "MAINTAIN" ? "blue" : "muted";
-                      const statusText = String(row.stockListStatus || "-").toUpperCase();
-                      const statusCls = statusText === "FADE IN" ? "good" : statusText === "FADE OUT" || statusText === "EXCLUDE" ? "bad" : statusText === "WATCH" ? "amber" : "muted";
                       const holdingStatus = String(row.holdingStatus || "-");
-                      const holdingCls = holdingStatus === "ACTIVE" || holdingStatus === "FADE IN" ? "good" : holdingStatus === "FADE OUT" ? "amber" : "muted";
+                      const holdingCls = holdingStatus === "ACTIVE" ? "good" : holdingStatus === "FADE OUT" ? "amber" : "muted";
+                      const gap = row.weightGap;
+                      const gapStr = gap !== null && gap !== undefined
+                        ? `${gap >= 0 ? "+" : ""}${gap.toFixed(1)}%`
+                        : "-";
+                      const gapCls = gap === null || gap === undefined ? "muted" : Math.abs(gap) < 2 ? "muted" : gap > 0 ? "good" : "bad";
                       return (
                         <tr key={i}>
                           <td><b>{row.assetCode}</b></td>
                           <td><Badge value={row.source} /></td>
                           <td>{row.sector || "-"}</td>
-                          <td><span className={statusCls}>{statusText}</span></td>
-                          <td><span className={holdingCls}>{holdingStatus}</span></td>
                           <td><span className={clsFor(row.qualityTier)}>{row.qualityTier || "-"}</span></td>
-                          <td>{row.finalTargetWeight ? percent(row.finalTargetWeight) : "-"}</td>
+                          <td><span className={holdingCls}>{holdingStatus}</span></td>
+                          <td>{row.currentWeight ? `${row.currentWeight.toFixed(2)}%` : "-"}</td>
+                          <td>{row.finalTargetWeight ? `${row.finalTargetWeight.toFixed(2)}%` : "-"}</td>
+                          <td><span className={gapCls}>{gapStr}</span></td>
                           <td>
                             <span className={`badge ${signalCls === "good" ? "dividend" : signalCls === "blue" ? "growth" : "other"}`} style={signal === "REDUCE" || signal === "EXCLUDE" ? {background:"#2a0d12",color:"#ff8aa0"} : undefined}>
                               {signal}
