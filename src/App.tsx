@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbzNH2hd0LnOUYhpjWYpcbIJYj_ZivvHRlsVErUOqUevyO36CMId8u2dTioElLLoJHLERw/exec";
+  "https://script.google.com/macros/s/AKfycbwwI30IavKXi3XRRZuCiQ5PqB0NvRWPkDLsise4h7xPFeHPUKwW_JqpYoj4pOzoyK8g0g/exec";
 
 const EMPTY_DATA = {
   summary: {},
