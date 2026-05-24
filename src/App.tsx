@@ -1329,7 +1329,6 @@ function App() {
                   <button className="primary" disabled={saving} onClick={saveDividendGoal}>
                     {saving ? "Saving..." : "Save Dividend Goal"}
                   </button>
-                  <p>Saved to PORTFOLIO PHASE CONFIG!B31:B32</p>
                 </div>
               </div>
             </Panel>
