@@ -1007,9 +1007,11 @@ function App() {
                       <td>{sector || "-"}</td>
                       <td>{note || "-"}</td>
                       <td>{hasValue(marketPrice) && n(marketPrice) !== 0 ? baht(marketPrice) : "-"}</td>
-                      <td className={n(targetWeight) < 0 ? "negative" : ""}>
-  {stockDisplayPercent(targetWeight)}
-</td>
+                      <td>
+                        {hasValue(targetWeight) && String(targetWeight).trim() !== ""
+                          ? <span className={n(targetWeight) < 0 ? "bad" : ""}>{stockDisplayPercent(targetWeight)}</span>
+                          : <span className="muted">-</span>}
+                      </td>
                       <td>{stockDisplayPercent(winRate)}</td>
                       <td><span className={!hasValue(avgReturn) ? "muted" : n(avgReturn) >= 0 ? "good" : "bad"}>{stockDisplayPercent(avgReturn)}</span></td>
                       <td><span className={!hasValue(priceSignal) ? "muted" : n(priceSignal) >= 0 ? "good" : "bad"}>{stockDisplayPercent(priceSignal)}</span></td>
