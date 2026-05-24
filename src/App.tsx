@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbxRF-hb_9Nh-Lia9Wmq_-pVpF88BLD1gWHNLP-_46cEzZ_zM7vth-O1WoH_hFHU1j4tHw/exec";
+  "https://script.google.com/macros/s/AKfycbwnMznBNU5JekPcOjJQSmOdOBbU1VVbaGl9FXckJr7kUjO5F1qXcFQcrwrLQguhKPrW5Q/exec";
 
 const EMPTY_DATA = {
   summary: {},
@@ -17,6 +17,7 @@ const EMPTY_DATA = {
   decisionAnalytics: { trend: [], status: [] },
   allocationEngine: [],
   performanceEngine: {},
+  dividendGoal: {},
 };
 
 const PHASES = ["Build", "Balance", "Income"];
@@ -168,6 +169,7 @@ function App() {
   });
   const [allocFilter, setAllocFilter] = useState("All");
   const [allocSource, setAllocSource] = useState("All");
+  const [dividendGoalDraft, setDividendGoalDraft] = useState("");
 
   const loadData = async () => {
     try {
@@ -190,6 +192,13 @@ function App() {
         lineAvailable: String(next.summary?.lineAvailable ?? ""),
         totalWealth: String(next.targets?.totalWealth ?? ""),
       });
+      setDividendGoalDraft(String(
+        next.dividendGoal?.CurrentAnnualDividendGross ??
+        next.dividendGoal?.CurrentAnnualDividend ??
+        next.dividendGoal?.currentAnnualDividendGross ??
+        next.dividendGoal?.currentAnnualDividend ??
+        ""
+      ));
     } catch (err: any) {
       setError(err.message || "Failed to fetch");
     } finally {
@@ -384,6 +393,25 @@ function App() {
     (growthHoldings.length > 0 ? growthHoldings.reduce((a, b) => (b.gl > a.gl ? b : a), growthHoldings[0])?.symbol : "-");
   const worstGrowth = perfEngine.worstGrowth ||
     (growthHoldings.length > 0 ? growthHoldings.reduce((a, b) => (b.gl < a.gl ? b : a), growthHoldings[0])?.symbol : "-");
+
+  // ── Dividend Goal Module ──
+  const dividendGoal = data.dividendGoal || {};
+  const annualDividendGoal = n(dividendGoal.AnnualDividendGoal ?? dividendGoal.annualDividendGoal);
+  const currentAnnualDividendGross = n(
+    dividendGoal.CurrentAnnualDividendGross ??
+    dividendGoal.CurrentAnnualDividend ??
+    dividendGoal.currentAnnualDividendGross ??
+    dividendGoal.currentAnnualDividend
+  );
+  const dividendProgressValue = hasValue(dividendGoal.DividendProgress)
+    ? pct(dividendGoal.DividendProgress)
+    : (annualDividendGoal > 0 ? (currentAnnualDividendGross / annualDividendGoal) * 100 : 0);
+  const monthlyIncomeTarget = n(dividendGoal.MonthlyIncomeTarget ?? dividendGoal.monthlyIncomeTarget) || (annualDividendGoal / 12);
+  const currentMonthlyDividend = n(dividendGoal.CurrentMonthlyDividend ?? dividendGoal.currentMonthlyDividend) || (currentAnnualDividendGross / 12);
+  const remainingAnnualGap = n(dividendGoal.RemainingAnnualGap ?? dividendGoal.remainingAnnualGap) || Math.max(annualDividendGoal - currentAnnualDividendGross, 0);
+  const remainingMonthlyGap = n(dividendGoal.RemainingMonthlyGap ?? dividendGoal.remainingMonthlyGap) || (remainingAnnualGap / 12);
+  const dividendFreedomYear = dividendGoal.DividendFreedomYear ?? dividendGoal.dividendFreedomYear ?? "-";
+  const dividendGoalStatus = dividendGoal.DividendGoalStatus ?? dividendGoal.dividendGoalStatus ?? "-";
 
   // ── Allocation Intelligent Engine ──
   const allocationEngine: any[] = data.allocationEngine || [];
@@ -629,6 +657,28 @@ function App() {
       await loadData();
     } catch (err: any) {
       setError(err.message || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveDividendGoal = async () => {
+    try {
+      setSaving(true);
+      setError("");
+      const res = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "saveDividendGoal",
+          currentAnnualDividendGross: n(dividendGoalDraft),
+        }),
+      });
+      const result = await res.json();
+      if (!result.success && result.status !== "success") throw new Error(result.message || "Save dividend goal failed");
+      await loadData();
+    } catch (err: any) {
+      setError(err.message || "Save dividend goal failed");
     } finally {
       setSaving(false);
     }
@@ -1230,6 +1280,44 @@ function App() {
               </div>
             </Panel>
 
+            <div className="perf-section-label" style={{marginTop:8}}>Income Goal</div>
+            <Panel title="Annual Dividend Goal" badge={String(dividendGoalStatus || "STARTING")}>
+              <div className="dividend-goal-wrap">
+                <div className="dividend-goal-main">
+                  <div className="dividend-goal-kicker">Current Gross Dividend</div>
+                  <div className="dividend-goal-value">{baht(currentAnnualDividendGross)}</div>
+                  <div className="dividend-goal-sub">of {baht(annualDividendGoal)} annual goal · {fmt(dividendProgressValue)}%</div>
+                  <div className="dividend-progress-track">
+                    <i style={{ width: `${Math.max(0, Math.min(100, dividendProgressValue))}%` }} />
+                  </div>
+                </div>
+
+                <div className="dividend-goal-stats">
+                  <div><span>Monthly Current</span><b>{baht(currentMonthlyDividend)}</b></div>
+                  <div><span>Monthly Target</span><b>{baht(monthlyIncomeTarget)}</b></div>
+                  <div><span>Annual Gap</span><b>{baht(remainingAnnualGap)}</b></div>
+                  <div><span>Monthly Gap</span><b>{baht(remainingMonthlyGap)}</b></div>
+                  <div><span>Freedom Year</span><b>{dividendFreedomYear}</b></div>
+                  <div><span>Status</span><b>{dividendGoalStatus}</b></div>
+                </div>
+
+                <div className="dividend-goal-editor">
+                  <label className="field">
+                    <span>CurrentAnnualDividendGross</span>
+                    <input
+                      value={dividendGoalDraft}
+                      onChange={(e) => setDividendGoalDraft(e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </label>
+                  <button className="primary" disabled={saving} onClick={saveDividendGoal}>
+                    {saving ? "Saving..." : "Save Dividend"}
+                  </button>
+                  <p>Saved to PORTFOLIO PHASE CONFIG!B32</p>
+                </div>
+              </div>
+            </Panel>
+
             <div className="perf-section-label" style={{marginTop:8}}>Decision Quality</div>
             <Panel title="Decision Analytics">
               <div className="panel-copy">Averaged decision quality from Decision Log.</div>
@@ -1657,7 +1745,21 @@ const styles = `
 .perf-contrib-item.bad{border-left:3px solid #ff4d6d}
 .perf-contrib-label{display:block;font-size:10px;letter-spacing:.18em;color:#4a6a8a;text-transform:uppercase;font-weight:900;margin-bottom:6px}
 .perf-contrib-item b{font-family:Consolas,monospace;font-size:22px;color:#e8f1ff}
-@media(max-width:1200px){.order-card-grid,.manual-grid{grid-template-columns:1fr}.manual-note,.manual-save{grid-column:auto}.allocation-donut-wrap{grid-template-columns:1fr}.cards.six{grid-template-columns:repeat(3,1fr)}.grid.two,.settings-grid,.trade-grid,.decision-grid{grid-template-columns:1fr}.decision-metrics{grid-template-columns:repeat(2,1fr)}.tabs{justify-content:flex-start;overflow:auto}.topbar{padding:0 18px}.brand{min-width:auto}.perf-row-head,.perf-row{grid-template-columns:100px 1fr 1fr 1fr 1fr 1fr;font-size:12px}.cards.four{grid-template-columns:repeat(2,1fr)}.perf-contributors{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.topbar{height:auto;align-items:flex-start;flex-direction:column;padding:18px}.tabs{width:100%;justify-content:flex-start;flex-wrap:wrap}.shell{padding:14px 12px 60px}.cards.six,.cards.four,.form-grid,.decision-metrics{grid-template-columns:1fr}.market-strip,.portfolio-head{align-items:flex-start;flex-direction:column}.toolbar input{min-width:100%;width:100%}.portfolio-actions{width:100%;flex-direction:column}.portfolio-actions button,.trade-save{width:100%}.perf-breakdown{padding:12px 14px 0}.perf-row-head{display:none}.perf-row{grid-template-columns:1fr 1fr;gap:8px;padding:12px 0;font-size:12px}.perf-row span:first-child{grid-column:1/-1;margin-bottom:4px}.perf-contributors{grid-template-columns:1fr 1fr;padding:12px 14px}.perf-section-label{padding:0 2px 6px;font-size:10px}.bars{padding:12px 14px}.barrow{grid-template-columns:60px 1fr 70px}.table-wrap{-webkit-overflow-scrolling:touch}table{min-width:600px}th,td{padding:10px 12px;font-size:12px}.metric{min-height:90px;padding:14px 16px}.metric-value{font-size:20px}.toolbar{padding:10px 12px;gap:8px}.toolbar select{width:100%}}
+
+.dividend-goal-wrap{display:grid;grid-template-columns:1.15fr 1.4fr 320px;gap:18px;padding:22px 26px;align-items:stretch}
+.dividend-goal-main,.dividend-goal-editor,.dividend-goal-stats>div{border:1px solid #173151;background:#071321;border-radius:8px;padding:18px}
+.dividend-goal-kicker{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#4a6a8a;font-weight:900}
+.dividend-goal-value{font-family:Consolas,monospace;font-size:32px;font-weight:900;color:#20d6a2;margin:12px 0 6px}
+.dividend-goal-sub{color:#88a6cc;font-size:13px}
+.dividend-progress-track{height:9px;background:#152740;border-radius:999px;margin-top:18px;overflow:hidden}
+.dividend-progress-track i{display:block;height:100%;background:#20d6a2;border-radius:999px}
+.dividend-goal-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.dividend-goal-stats span{display:block;color:#7894ba;text-transform:uppercase;letter-spacing:.12em;font-size:10px;font-weight:900;margin-bottom:8px}
+.dividend-goal-stats b{font-family:Consolas,monospace;font-size:18px;color:#e8f1ff}
+.dividend-goal-editor{display:flex;flex-direction:column;gap:12px}
+.dividend-goal-editor .primary{width:100%}
+.dividend-goal-editor p{margin:0;color:#7894ba;font-size:12px;line-height:1.4}
+@media(max-width:1200px){.order-card-grid,.manual-grid{grid-template-columns:1fr}.manual-note,.manual-save{grid-column:auto}.allocation-donut-wrap{grid-template-columns:1fr}.cards.six{grid-template-columns:repeat(3,1fr)}.grid.two,.settings-grid,.trade-grid,.decision-grid{grid-template-columns:1fr}.decision-metrics{grid-template-columns:repeat(2,1fr)}.tabs{justify-content:flex-start;overflow:auto}.topbar{padding:0 18px}.brand{min-width:auto}.perf-row-head,.perf-row{grid-template-columns:100px 1fr 1fr 1fr 1fr 1fr;font-size:12px}.cards.four{grid-template-columns:repeat(2,1fr)}.perf-contributors{grid-template-columns:repeat(2,1fr)}}@media(max-width:1200px){.dividend-goal-wrap{grid-template-columns:1fr}.dividend-goal-stats{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.topbar{height:auto;align-items:flex-start;flex-direction:column;padding:18px}.tabs{width:100%;justify-content:flex-start;flex-wrap:wrap}.shell{padding:14px 12px 60px}.cards.six,.cards.four,.form-grid,.decision-metrics,.dividend-goal-stats{grid-template-columns:1fr}.market-strip,.portfolio-head{align-items:flex-start;flex-direction:column}.toolbar input{min-width:100%;width:100%}.portfolio-actions{width:100%;flex-direction:column}.portfolio-actions button,.trade-save{width:100%}.perf-breakdown{padding:12px 14px 0}.perf-row-head{display:none}.perf-row{grid-template-columns:1fr 1fr;gap:8px;padding:12px 0;font-size:12px}.perf-row span:first-child{grid-column:1/-1;margin-bottom:4px}.perf-contributors{grid-template-columns:1fr 1fr;padding:12px 14px}.perf-section-label{padding:0 2px 6px;font-size:10px}.bars{padding:12px 14px}.barrow{grid-template-columns:60px 1fr 70px}.table-wrap{-webkit-overflow-scrolling:touch}table{min-width:600px}th,td{padding:10px 12px;font-size:12px}.metric{min-height:90px;padding:14px 16px}.metric-value{font-size:20px}.toolbar{padding:10px 12px;gap:8px}.toolbar select{width:100%}}
 `;
 
 export default App;
