@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbwnMznBNU5JekPcOjJQSmOdOBbU1VVbaGl9FXckJr7kUjO5F1qXcFQcrwrLQguhKPrW5Q/exec";
+  "https://script.google.com/macros/s/AKfycbygRwn1JEWlx7Jb1s0FBnBpOmulX9ET9kvbZe_A6ZiD6DRHnBA32pAJJKJVCzaRXycaVg/exec";
 
 const EMPTY_DATA = {
   summary: {},
@@ -672,6 +672,7 @@ function App() {
         body: JSON.stringify({
           action: "saveDividendGoal",
           currentAnnualDividendGross: n(dividendGoalDraft),
+          currentAnnualDividend: n(dividendGoalDraft),
         }),
       });
       const result = await res.json();
