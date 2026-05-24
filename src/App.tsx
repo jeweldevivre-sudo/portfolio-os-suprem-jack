@@ -530,6 +530,13 @@ function App() {
         .filter(Boolean)
     );
 
+    // Build P/L lookup from holdings for sorting inside the holdings group
+    const holdingPL: Record<string, number> = {};
+    (holdings || []).forEach((h: any) => {
+      const code = String(h.symbol || h.assetCode || "").toUpperCase();
+      holdingPL[code] = n(h.glPct ?? h.unrealizedPLPercent ?? 0);
+    });
+
     const rows = stockList.filter((stock: any) => {
       const text = `${stock.assetCode || stock.symbol} ${stock.source} ${stock.sector} ${stock.leaderFlag} ${stock.universeNote} ${stock.manualStatus}`.toLowerCase();
       const matchesQuery = !stockQuery || text.includes(stockQuery.toLowerCase());
@@ -540,17 +547,25 @@ function App() {
     });
 
     return [...rows].sort((a: any, b: any) => {
-      const aSymbol = String(stockField(a, ["symbol", "assetCode", "Asset Code", "asset"])).toUpperCase();
-      const bSymbol = String(stockField(b, ["symbol", "assetCode", "Asset Code", "asset"])).toUpperCase();
+      const aSymbol = String(stockField(a, ["symbol", "assetCode"])).toUpperCase();
+      const bSymbol = String(stockField(b, ["symbol", "assetCode"])).toUpperCase();
       const aIsHolding = holdingSymbols.has(aSymbol) ? 1 : 0;
       const bIsHolding = holdingSymbols.has(bSymbol) ? 1 : 0;
 
-      // Holdings first, then sort by Price Signal highest to lowest inside each group.
+      // Group 1: holdings first
       if (aIsHolding !== bIsHolding) return bIsHolding - aIsHolding;
 
-      const aSignal = stockSortNumber(stockField(a, ["priceSignal", "price_signal", "Price Signal", "PRICE SIGNAL", "pricesignal", "plPct", "P/L %", "P/L%"]));
-      const bSignal = stockSortNumber(stockField(b, ["priceSignal", "price_signal", "Price Signal", "PRICE SIGNAL", "pricesignal", "plPct", "P/L %", "P/L%"]));
+      if (aIsHolding && bIsHolding) {
+        // Within holdings: sort by P/L% descending (best performer first)
+        const aPL = holdingPL[aSymbol] ?? -9999;
+        const bPL = holdingPL[bSymbol] ?? -9999;
+        if (bPL !== aPL) return bPL - aPL;
+        return aSymbol.localeCompare(bSymbol);
+      }
 
+      // Group 2: non-holdings — sort by Price Signal descending
+      const aSignal = stockSortNumber(stockField(a, ["priceSignal", "price_signal", "Price Signal", "PRICE SIGNAL"]));
+      const bSignal = stockSortNumber(stockField(b, ["priceSignal", "price_signal", "Price Signal", "PRICE SIGNAL"]));
       if (aSignal === null && bSignal === null) return aSymbol.localeCompare(bSymbol);
       if (aSignal === null) return 1;
       if (bSignal === null) return -1;
