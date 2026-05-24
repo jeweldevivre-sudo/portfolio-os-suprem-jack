@@ -978,6 +978,7 @@ function App() {
                     <th>SOURCE</th>
                     <th>SECTOR</th>
                     <th>NOTE</th>
+                    <th>MARKET PRICE</th>
                     <th>TARGET WT</th>
                     <th>WIN RATE</th>
                     <th>AVG RETURN</th>
@@ -987,12 +988,13 @@ function App() {
                 </thead>
                 <tbody>
                   {filteredStocks.length === 0 ? (
-                    <tr><td colSpan={9}><Empty text="No stock list rows" /></td></tr>
+                    <tr><td colSpan={10}><Empty text="No stock list rows" /></td></tr>
                   ) : filteredStocks.map((s: any) => {
                     const symbol = stockField(s, ["symbol", "assetCode", "Asset Code", "asset"]);
                     const source = stockField(s, ["source", "type", "Source"]);
                     const sector = stockField(s, ["sector", "Sector"]);
                     const note = stockField(s, ["universeNote", "note", "Note"]);
+                    const marketPrice = stockField(s, ["marketPrice", "Market Price", "price"]);
                     const targetWeight = stockField(s, ["targetWeight", "Target Weight", "targetWt", "Target WT"]);
                     const winRate = stockField(s, ["winRate", "win_rate", "Win Rate", "WIN RATE", "winrate"]);
                     const avgReturn = stockField(s, ["avgReturn", "avg_return", "Avg Return", "AVG RETURN", "averageReturn", "averagereturn"]);
@@ -1004,6 +1006,7 @@ function App() {
                       <td><Badge value={source} /></td>
                       <td>{sector || "-"}</td>
                       <td>{note || "-"}</td>
+                      <td>{hasValue(marketPrice) ? baht(marketPrice) : "-"}</td>
                       <td>{stockDisplayPercent(targetWeight)}</td>
                       <td>{stockDisplayPercent(winRate)}</td>
                       <td><span className={!hasValue(avgReturn) ? "muted" : n(avgReturn) >= 0 ? "good" : "bad"}>{stockDisplayPercent(avgReturn)}</span></td>
