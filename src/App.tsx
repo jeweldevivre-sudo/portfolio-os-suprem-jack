@@ -879,7 +879,7 @@ function App() {
               </Panel>
               <Panel title="P/L By Position">
                 <div className="bars">
-                  {holdings.slice(0, 10).map((h) => (
+                  {[...holdings].sort((a, b) => b.glPct - a.glPct).slice(0, 10).map((h) => (
                     <div className="barrow" key={h.symbol}>
                       <span>{h.symbol}</span>
                       <div className="track"><i style={{ width: `${Math.min(Math.abs(h.glPct), 40) * 2.5}%`, background: h.gl >= 0 ? "#20d6a2" : "#ff4d6d" }} /></div>
