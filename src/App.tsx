@@ -1289,7 +1289,7 @@ function App() {
             </Panel>
 
             <div className="perf-section-label" style={{marginTop:8}}>Income Goal</div>
-            <Panel title="Annual Dividend Goal" badge={String(dividendGoalStatus || "STARTING")}>
+            <Panel title="Annual Dividend Goal">
               <div className="dividend-goal-wrap">
                 <div className="dividend-goal-main">
                   <div className="dividend-goal-kicker">Current Gross Dividend</div>
@@ -1311,7 +1311,7 @@ function App() {
 
                 <div className="dividend-goal-editor">
                   <label className="field">
-                    <span>AnnualDividendGoal</span>
+                    <span>Annual Dividend Goal</span>
                     <input
                       value={annualDividendGoalDraft}
                       onChange={(e) => setAnnualDividendGoalDraft(e.target.value)}
@@ -1319,7 +1319,7 @@ function App() {
                     />
                   </label>
                   <label className="field">
-                    <span>CurrentAnnualDividendGross</span>
+                    <span>Current Annual Dividend Gross</span>
                     <input
                       value={dividendGoalDraft}
                       onChange={(e) => setDividendGoalDraft(e.target.value)}
