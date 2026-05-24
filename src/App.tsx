@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbw0dc8vl2d_RIFG4gOcZxx3V0vaChaid4HQ49LdjCMglXhCuhe7FN5h8XJju5IGAMQ_/exec";
+  "https://script.google.com/macros/s/AKfycbxBCO4ewWXquAuouiW28jvHqXsoO84w5PQma-8vqlrK3frmjR2qEi9fFCUPxTpJV7sg0w/exec";
 
 const EMPTY_DATA = {
   summary: {},
@@ -60,47 +60,6 @@ const baht = (value: any, compact = false) => {
 };
 
 const percent = (value: any, digits = 2) => `${fmt(pct(value), digits)}%`;
-
-const hasValue = (value: any) => value !== null && value !== undefined && value !== "";
-
-const displayPercent = (value: any, digits = 2) => hasValue(value) ? percent(value, digits) : "-";
-
-// Stock List API already sends percent values as display-scale numbers (e.g. 0.54 = 0.54%).
-// Do not run these through pct(), or 0.54% becomes 54.00%.
-const stockDisplayPercent = (value: any, digits = 2) => hasValue(value) ? `${fmt(n(value), digits)}%` : "-";
-
-const stockSortNumber = (value: any) => {
-  if (!hasValue(value)) return null;
-  const number = n(value);
-  return Number.isFinite(number) ? number : null;
-};
-
-const normalizeKey = (value: any) =>
-  String(value || "")
-    .replace(/[\s_\-/%]/g, "")
-    .toLowerCase();
-
-const stockField = (row: any, keys: string[]) => {
-  if (!row) return "";
-
-  // 1) Exact key match first
-  for (const key of keys) {
-    if (hasValue(row[key])) return row[key];
-  }
-
-  // 2) Flexible key match: priceSignal / Price Signal / price_signal / PRICE SIGNAL
-  const rowKeys = Object.keys(row);
-  for (const key of keys) {
-    const wanted = normalizeKey(key);
-    const found = rowKeys.find((rowKey) => normalizeKey(rowKey) === wanted);
-    if (found && hasValue(row[found])) return row[found];
-  }
-
-  return "";
-};
-
-const normalizeStatus = (value: any) => String(value || "OK").trim().toUpperCase();
-
 
 const normalizeType = (...values: any[]) => {
   for (const value of values) {
@@ -388,72 +347,105 @@ function App() {
   // ── Allocation Intelligent Engine ──
   const allocationEngine: any[] = data.allocationEngine || [];
 
-  // ── Compute allocation rows: cross-reference holdings vs targets ──
-  // Priority: use allocationEngine from API if available (already computed by sheet)
-  // Fallback: compute from stockList + holdings with gap analysis
+  // Phase multipliers per source type — matches PORTFOLIO PHASE CONFIG sheet
+  // Default: Income phase (Dividend=0.8, Growth=1.3), adjust by phase name
+  const phaseMultiplierMap: Record<string, { dividend: number; growth: number }> = (() => {
+    // Try to read from API phaseControl first
+    const phases = data.phaseControl?.phases || data.phaseConfig || [];
+    if (Array.isArray(phases) && phases.length > 0) {
+      const map: Record<string, { dividend: number; growth: number }> = {};
+      phases.forEach((p: any) => {
+        map[String(p.phase)] = {
+          dividend: n(p.dividendMultiplier ?? p.dividend_multiplier ?? (pct(p.dividend) <= 1 ? pct(p.dividend) : pct(p.dividend) / 100)),
+          growth: n(p.growthMultiplier ?? p.growth_multiplier ?? (pct(p.growth) <= 1 ? pct(p.growth) : pct(p.growth) / 100)),
+        };
+      });
+      if (Object.keys(map).length > 0) return map;
+    }
+    // Hardcoded defaults matching sheet observation:
+    // Income:  Dividend×0.8, Growth×1.3
+    // Build:   Dividend×0.6, Growth×1.5
+    // Balance: Dividend×1.0, Growth×1.0
+    return {
+      Build:   { dividend: 0.6, growth: 1.5 },
+      Balance: { dividend: 1.0, growth: 1.0 },
+      Income:  { dividend: 0.8, growth: 1.3 },
+    };
+  })();
+
+  const activeMultipliers = phaseMultiplierMap[settings.phase] || { dividend: 0.8, growth: 1.3 };
+
+  // ── Compute allocation rows matching sheet logic exactly ──
+  // Sheet formula: Suggested = Base × PhaseMultiplier × FadeMultiplier
+  //                Min = Suggested × 0.8, Max = Suggested × 1.2
+  //                Signal: Current > Max → REDUCE, Current < Min → INCREASE, else MAINTAIN
   const allocationRows = useMemo(() => {
     if (allocationEngine.length > 0) return allocationEngine;
 
-    // Build a holdings lookup: assetCode → holding
     const holdingMap: Record<string, any> = {};
     holdings.forEach((h) => {
       const code = String(h.symbol || h.assetCode || "").toUpperCase();
       holdingMap[code] = h;
     });
 
-    const WEIGHT_GAP_THRESHOLD = 2; // % gap before recommending action
     const rows: any[] = [];
 
-    // 1. Process each stock in the universe
     stockList.forEach((s: any) => {
       const code = String(s.assetCode || s.symbol || "").toUpperCase();
       const manualStatus = String(s.manualStatus || "OK").toUpperCase();
 
-      // Skip excluded stocks unless currently held
       if (manualStatus === "EXCLUDE" && !holdingMap[code]) return;
 
       const holding = holdingMap[code];
-      const targetWeight = pct(s.targetWeight || s.finalTargetWeight || 0);
+      const baseTarget = pct(s.targetWeight || s.finalTargetWeight || 0);
+      const stockType = normalizeType(s.source);
+
+      // Phase multiplier by source type
+      const phaseMultiplier = stockType === "Dividend"
+        ? activeMultipliers.dividend
+        : stockType === "Growth"
+        ? activeMultipliers.growth
+        : 1.0;
+
+      // Fade multiplier: FADE IN stocks get partial weight (sheet shows 1 for all currently)
+      const fadeMultiplier = manualStatus === "FADE IN"
+        ? n(s.fadeMultiplier ?? 1)
+        : 1;
+
+      // Suggested target = Base × Phase × Fade
+      const suggestedTarget = baseTarget * phaseMultiplier * fadeMultiplier;
+      const minTarget = suggestedTarget * 0.8;
+      const maxTarget = suggestedTarget * 1.2;
+
       const currentValue = holding ? n(holding.value) : 0;
       const currentWeight = totalValue > 0 ? (currentValue / totalValue) * 100 : 0;
-      const weightGap = targetWeight - currentWeight; // positive = underweight, negative = overweight
+      const gapToTarget = suggestedTarget - currentWeight;
 
-      // Derive signal from gap + manual status
+      // Signal logic matching sheet exactly
       let allocationSignal = "MAINTAIN";
       let reason = "";
 
       if (manualStatus === "EXCLUDE") {
         allocationSignal = "EXCLUDE";
-        reason = "Manually excluded from universe";
-      } else if (manualStatus === "FADE OUT") {
-        allocationSignal = "REDUCE";
-        reason = "Fade out — reduce position gradually";
-      } else if (manualStatus === "FADE IN") {
-        allocationSignal = "INCREASE";
-        reason = "Fade in — build position gradually";
+        reason = "Manually excluded";
       } else if (manualStatus === "WATCH") {
         allocationSignal = "WATCH";
         reason = "Under watch — no action until confirmed";
-      } else if (!holding && targetWeight > 0) {
+      } else if (!holding && suggestedTarget > 0) {
         allocationSignal = "INCREASE";
-        reason = `Not yet held · Target ${targetWeight.toFixed(2)}%`;
-      } else if (holding && targetWeight === 0) {
+        reason = `Not yet held · Target ${suggestedTarget.toFixed(2)}%`;
+      } else if (holding && currentWeight > maxTarget) {
         allocationSignal = "REDUCE";
-        reason = "Held position — no target weight assigned";
-      } else if (weightGap > WEIGHT_GAP_THRESHOLD) {
+        reason = "Above max target";
+      } else if (holding && currentWeight < minTarget) {
         allocationSignal = "INCREASE";
-        reason = `Underweight by ${weightGap.toFixed(1)}% vs target`;
-      } else if (weightGap < -WEIGHT_GAP_THRESHOLD) {
-        allocationSignal = "REDUCE";
-        reason = `Overweight by ${Math.abs(weightGap).toFixed(1)}% vs target`;
-      } else if (holding) {
-        allocationSignal = "MAINTAIN";
-        reason = s.leaderFlag === "LEADER"
-          ? "Strategic core allocation — sector leader"
-          : "Within target range — hold position";
+        reason = "Below min target";
       } else {
-        // Not held, no target weight → universe stock but not yet in scope
-        return; // skip — not actionable
+        allocationSignal = "MAINTAIN";
+        // Match sheet reason logic
+        if (phaseMultiplier < 1) reason = "Phase reduces this asset";
+        else if (phaseMultiplier > 1) reason = "Phase favors this asset";
+        else reason = "Within target range";
       }
 
       rows.push({
@@ -462,11 +454,15 @@ function App() {
         sector: s.sector,
         stockListStatus: manualStatus,
         qualityTier: s.leaderFlag || "-",
-        finalTargetWeight: targetWeight || null,
+        strategicRole: s.strategicRole || (s.leaderFlag === "LEADER" ? "LEADER" : "QUALIFIED"),
+        baseTarget: baseTarget || null,
+        phaseMultiplier,
+        fadeMultiplier,
+        finalTargetWeight: suggestedTarget || null,
+        minTargetPct: minTarget,
+        maxTargetPct: maxTarget,
         currentWeight: currentWeight || null,
-        weightGap: (holding || targetWeight > 0) ? weightGap : null,
-        minTargetPct: pct(s.minTargetPct),
-        maxTargetPct: pct(s.maxTargetPct),
+        weightGap: gapToTarget,
         allocationSignal,
         engineEligible: manualStatus === "OK" || manualStatus === "FADE IN",
         reason,
@@ -475,7 +471,7 @@ function App() {
       });
     });
 
-    // 2. Check for holdings NOT in stockList (orphan positions → should reduce)
+    // Orphan holdings not in universe
     holdings.forEach((h) => {
       const code = String(h.symbol || h.assetCode || "").toUpperCase();
       const inUniverse = stockList.some(
@@ -489,11 +485,15 @@ function App() {
           sector: "-",
           stockListStatus: "WATCH",
           qualityTier: "-",
+          strategicRole: "-",
+          baseTarget: null,
+          phaseMultiplier: 1,
+          fadeMultiplier: 1,
           finalTargetWeight: null,
-          currentWeight,
-          weightGap: -currentWeight,
           minTargetPct: 0,
           maxTargetPct: 0,
+          currentWeight,
+          weightGap: -currentWeight,
           allocationSignal: "REDUCE",
           engineEligible: false,
           reason: "Held but not in stock universe — review",
@@ -503,11 +503,10 @@ function App() {
       }
     });
 
-    // Sort: INCREASE first, REDUCE next, WATCH, MAINTAIN, EXCLUDE last
     const signalOrder: Record<string, number> = { INCREASE: 0, REDUCE: 1, WATCH: 2, MAINTAIN: 3, EXCLUDE: 4 };
     rows.sort((a, b) => (signalOrder[a.allocationSignal] ?? 5) - (signalOrder[b.allocationSignal] ?? 5));
     return rows;
-  }, [allocationEngine, stockList, holdings, totalValue]);
+  }, [allocationEngine, stockList, holdings, totalValue, settings.phase, activeMultipliers]);
 
   const filteredAllocation = allocationRows.filter((row: any) => {
     const matchSource = allocSource === "All" || normalizeType(row.source) === allocSource;
@@ -523,41 +522,14 @@ function App() {
     return matchSource && matchSignal;
   });
 
-  const filteredStocks = useMemo(() => {
-    const holdingSymbols = new Set(
-      (holdings || [])
-        .map((h: any) => String(h.symbol || h.assetCode || "").toUpperCase())
-        .filter(Boolean)
-    );
-
-    const rows = stockList.filter((stock: any) => {
-      const text = `${stock.assetCode || stock.symbol} ${stock.source} ${stock.sector} ${stock.leaderFlag} ${stock.universeNote} ${stock.manualStatus}`.toLowerCase();
-      const matchesQuery = !stockQuery || text.includes(stockQuery.toLowerCase());
-      const matchesSource = stockSource === "All" || normalizeType(stock.source) === stockSource;
-      const statusText = String(stock.manualStatus || stock.universeNote || "").toUpperCase();
-      const matchesStatus = stockStatus === "All" || statusText.includes(stockStatus.toUpperCase());
-      return matchesQuery && matchesSource && matchesStatus;
-    });
-
-    return [...rows].sort((a: any, b: any) => {
-      const aSymbol = String(stockField(a, ["symbol", "assetCode", "Asset Code", "asset"])).toUpperCase();
-      const bSymbol = String(stockField(b, ["symbol", "assetCode", "Asset Code", "asset"])).toUpperCase();
-      const aIsHolding = holdingSymbols.has(aSymbol) ? 1 : 0;
-      const bIsHolding = holdingSymbols.has(bSymbol) ? 1 : 0;
-
-      // Holdings first, then sort by Price Signal highest to lowest inside each group.
-      if (aIsHolding !== bIsHolding) return bIsHolding - aIsHolding;
-
-      const aSignal = stockSortNumber(stockField(a, ["priceSignal", "price_signal", "Price Signal", "PRICE SIGNAL", "pricesignal", "plPct", "P/L %", "P/L%"]));
-      const bSignal = stockSortNumber(stockField(b, ["priceSignal", "price_signal", "Price Signal", "PRICE SIGNAL", "pricesignal", "plPct", "P/L %", "P/L%"]));
-
-      if (aSignal === null && bSignal === null) return aSymbol.localeCompare(bSymbol);
-      if (aSignal === null) return 1;
-      if (bSignal === null) return -1;
-      if (bSignal !== aSignal) return bSignal - aSignal;
-      return aSymbol.localeCompare(bSymbol);
-    });
-  }, [stockList, holdings, stockQuery, stockSource, stockStatus]);
+  const filteredStocks = stockList.filter((stock: any) => {
+    const text = `${stock.assetCode || stock.symbol} ${stock.source} ${stock.sector} ${stock.leaderFlag} ${stock.universeNote} ${stock.manualStatus}`.toLowerCase();
+    const matchesQuery = !stockQuery || text.includes(stockQuery.toLowerCase());
+    const matchesSource = stockSource === "All" || normalizeType(stock.source) === stockSource;
+    const statusText = String(stock.manualStatus || stock.universeNote || "").toUpperCase();
+    const matchesStatus = stockStatus === "All" || statusText.includes(stockStatus.toUpperCase());
+    return matchesQuery && matchesSource && matchesStatus;
+  });
 
   const filteredOrders = orders.filter((order: any) => orderFilter === "All" || order.actionType === orderFilter);
 
@@ -960,9 +932,9 @@ function App() {
         )}
 
         {tab === "stockList" && (
-          <Panel title={`Stock List - ${filteredStocks.length}/${stockList.length}`}>
+          <Panel title={`Stock List — ${filteredStocks.length}/${stockList.length}`}>
             <div className="toolbar">
-              <input value={stockQuery} onChange={(e) => setStockQuery(e.target.value)} placeholder="Search symbol, sector, note" />
+              <input value={stockQuery} onChange={(e) => setStockQuery(e.target.value)} placeholder="Search symbol, sector, note…" />
               <select value={stockSource} onChange={(e) => setStockSource(e.target.value)}>
                 {SOURCES.map((item) => <option key={item}>{item}</option>)}
               </select>
@@ -977,54 +949,96 @@ function App() {
                     <th>SYMBOL</th>
                     <th>SOURCE</th>
                     <th>SECTOR</th>
+                    <th>LEADER</th>
                     <th>NOTE</th>
-                    <th>MARKET PRICE</th>
+                    <th>PRICE</th>
                     <th>TARGET WT</th>
                     <th>WIN RATE</th>
                     <th>AVG RETURN</th>
                     <th>PRICE SIGNAL</th>
+                    <th>CONFIDENCE</th>
                     <th>STATUS</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredStocks.length === 0 ? (
-                    <tr><td colSpan={10}><Empty text="No stock list rows" /></td></tr>
+                    <tr><td colSpan={12}><Empty text="No stock list rows" /></td></tr>
                   ) : filteredStocks.map((s: any) => {
-                    const symbol = stockField(s, ["symbol", "assetCode", "Asset Code", "asset"]);
-                    const source = stockField(s, ["source", "type", "Source"]);
-                    const sector = stockField(s, ["sector", "Sector"]);
-                    const note = stockField(s, ["universeNote", "note", "Note"]);
-                    const marketPrice = stockField(s, ["marketPrice", "Market Price", "price"]);
-                    const targetWeight = stockField(s, ["targetWeight", "Target Weight", "targetWt", "Target WT"]);
-                    const winRate = stockField(s, ["winRate", "win_rate", "Win Rate", "WIN RATE", "winrate"]);
-                    const avgReturn = stockField(s, ["avgReturn", "avg_return", "Avg Return", "AVG RETURN", "averageReturn", "averagereturn"]);
-                    const priceSignal = stockField(s, ["priceSignal", "price_signal", "Price Signal", "PRICE SIGNAL", "pricesignal", "plPct", "P/L %", "P/L%"]);
-                    const manualStatus = normalizeStatus(stockField(s, ["manualStatus", "Manual Status", "status", "stockListStatus"]));
+                    // GAS field names — matched to buildStockList_ output
+                    const note        = s.universeNote || s.note || "-";
+                    const marketPrice = s.marketPrice;
+                    const targetWt    = s.targetWeight;
+                    const winRate     = s.winRate;
+                    const avgReturn   = s.avgReturn;
+                    const priceSignal = s.priceSignal;
+                    const confidence  = String(s.confidence || s.historicalBias || "").toUpperCase();
+                    const manualSt    = normalizeStatus(s.manualStatus);
+
+                    // Note icon — derive from note text or manualStatus
+                    const noteText = String(note).toLowerCase();
+                    const noteIcon = manualSt === "EXCLUDE" || noteText.includes("excluded")
+                      ? "🚫"
+                      : manualSt === "FADE IN" || noteText.includes("fade in")
+                      ? "🟢"
+                      : manualSt === "FADE OUT" || noteText.includes("fade out")
+                      ? "🟠"
+                      : String(s.leaderFlag).toUpperCase() === "LEADER"
+                      ? "🏆"
+                      : "✅";
+
+                    const confCls = confidence === "HIGH" ? "good"
+                      : confidence.includes("LOW DATA") ? "amber"
+                      : confidence.includes("LOW") ? "amber"
+                      : "muted";
+
+                    const psVal = n(priceSignal);
+                    const psCls = psVal > 0 ? "good" : psVal < 0 ? "bad" : "muted";
+
+                    const arVal = n(avgReturn);
+                    const arCls = arVal > 0 ? "good" : arVal < 0 ? "bad" : "muted";
+
+                    const wrVal = n(winRate);
+
                     return (
-                    <tr key={symbol || s.symbol || s.assetCode}>
-                      <td><b>{symbol || "-"}</b></td>
-                      <td><Badge value={source} /></td>
-                      <td>{sector || "-"}</td>
-                      <td>{note || "-"}</td>
-                      <td>{hasValue(marketPrice) ? baht(marketPrice) : "-"}</td>
-                      <td>{stockDisplayPercent(targetWeight)}</td>
-                      <td>{stockDisplayPercent(winRate)}</td>
-                      <td><span className={!hasValue(avgReturn) ? "muted" : n(avgReturn) >= 0 ? "good" : "bad"}>{stockDisplayPercent(avgReturn)}</span></td>
-                      <td><span className={!hasValue(priceSignal) ? "muted" : n(priceSignal) >= 0 ? "good" : "bad"}>{stockDisplayPercent(priceSignal)}</span></td>
-                      <td>
-                        <select
-                          className={`status-select ${clsFor(manualStatus)}`}
-                          value={manualStatus}
-                          disabled={saving}
-                          onChange={(e) => saveStockManualStatus(s, e.target.value)}
-                        >
-                          {STOCK_STATUS_OPTIONS.map((status) => (
-                            <option key={status} value={status}>{status}</option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  );})}
+                      <tr key={s.symbol || s.assetCode}>
+                        <td><b>{s.symbol || s.assetCode}</b></td>
+                        <td><Badge value={s.source || s.type} /></td>
+                        <td>{s.sector || "-"}</td>
+                        <td><span className={clsFor(s.leaderFlag)}>{s.leaderFlag || "-"}</span></td>
+                        <td style={{fontSize:12,maxWidth:180,whiteSpace:"normal"}}>{noteIcon} {note}</td>
+                        <td>{hasValue(marketPrice) && n(marketPrice) > 0 ? baht(marketPrice) : "-"}</td>
+                        <td>{hasValue(targetWt) && String(targetWt).trim() !== "" ? stockDisplayPercent(targetWt) : "-"}</td>
+                        <td>
+                          {hasValue(winRate) && String(winRate).trim() !== ""
+                            ? <span className={wrVal >= 50 ? "good" : "amber"}>{stockDisplayPercent(winRate, 0)}</span>
+                            : <span className="muted">-</span>}
+                        </td>
+                        <td>
+                          {hasValue(avgReturn) && String(avgReturn).trim() !== ""
+                            ? <span className={arCls}>{arVal >= 0 ? "+" : ""}{stockDisplayPercent(avgReturn)}</span>
+                            : <span className="muted">-</span>}
+                        </td>
+                        <td>
+                          {hasValue(priceSignal) && String(priceSignal).trim() !== ""
+                            ? <span className={psCls}>{psVal >= 0 ? "+" : ""}{stockDisplayPercent(priceSignal)}</span>
+                            : <span className="muted">-</span>}
+                        </td>
+                        <td><span className={confCls}>{confidence || "-"}</span></td>
+                        <td>
+                          <select
+                            className={`status-select ${clsFor(manualSt)}`}
+                            value={manualSt}
+                            disabled={saving}
+                            onChange={(e) => saveStockManualStatus(s, e.target.value)}
+                          >
+                            {STOCK_STATUS_OPTIONS.map((status) => (
+                              <option key={status} value={status}>{status}</option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1234,98 +1248,6 @@ function App() {
           </>
         )}
 
-        {tab === "allocation" && (
-          <>
-            <div className="cards four">
-              <Metric
-                title="IN UNIVERSE"
-                value={String(allocationRows.length)}
-                sub={`${allocationRows.filter((r:any) => r.engineEligible === true || String(r.engineEligible).toUpperCase() === "TRUE" || r.holdingStatus === "ACTIVE").length} engine eligible`}
-                color="blue"
-              />
-              <Metric
-                title="FADE IN / INCREASE"
-                value={String(allocationRows.filter((r:any) => String(r.allocationSignal||"").toUpperCase() === "INCREASE" || String(r.stockListStatus||"").toUpperCase() === "FADE IN").length)}
-                sub="Positions to build up"
-                color="green"
-              />
-              <Metric
-                title="MAINTAIN"
-                value={String(allocationRows.filter((r:any) => String(r.allocationSignal||"").toUpperCase() === "MAINTAIN").length)}
-                sub="Core positions to hold"
-                color="violet"
-              />
-              <Metric
-                title="REDUCE / EXCLUDE"
-                value={String(allocationRows.filter((r:any) => ["REDUCE","EXCLUDE"].includes(String(r.allocationSignal||"").toUpperCase()) || ["FADE OUT","EXCLUDE"].includes(String(r.stockListStatus||"").toUpperCase())).length)}
-                sub="Reduce or remove positions"
-                color="amber"
-              />
-            </div>
-
-            <Panel title={`Allocation Intelligent Engine — ${filteredAllocation.length}/${allocationRows.length} stocks`}>
-              <div className="toolbar">
-                <select value={allocSource} onChange={(e) => setAllocSource(e.target.value)}>
-                  {["All","Dividend","Growth"].map((s) => <option key={s}>{s}</option>)}
-                </select>
-                <select value={allocFilter} onChange={(e) => setAllocFilter(e.target.value)}>
-                  {["All","MAINTAIN","INCREASE","REDUCE","EXCLUDE","WATCH"].map((s) => <option key={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>ASSET CODE</th>
-                      <th>SOURCE</th>
-                      <th>SECTOR</th>
-                      <th>QUALITY TIER</th>
-                      <th>HOLDING</th>
-                      <th>CURRENT WT</th>
-                      <th>TARGET WT</th>
-                      <th>GAP</th>
-                      <th>SIGNAL</th>
-                      <th>NOTE / REASON</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredAllocation.length === 0 ? (
-                      <tr><td colSpan={10}><Empty text="No allocation data" /></td></tr>
-                    ) : filteredAllocation.map((row: any, i: number) => {
-                      const signal = String(row.allocationSignal || "-").toUpperCase();
-                      const signalCls = signal === "INCREASE" ? "good" : signal === "REDUCE" ? "bad" : signal === "EXCLUDE" ? "bad" : signal === "MAINTAIN" ? "blue" : "muted";
-                      const holdingStatus = String(row.holdingStatus || "-");
-                      const holdingCls = holdingStatus === "ACTIVE" ? "good" : holdingStatus === "FADE OUT" ? "amber" : "muted";
-                      const gap = row.weightGap;
-                      const gapStr = gap !== null && gap !== undefined
-                        ? `${gap >= 0 ? "+" : ""}${gap.toFixed(1)}%`
-                        : "-";
-                      const gapCls = gap === null || gap === undefined ? "muted" : Math.abs(gap) < 2 ? "muted" : gap > 0 ? "good" : "bad";
-                      return (
-                        <tr key={i}>
-                          <td><b>{row.assetCode}</b></td>
-                          <td><Badge value={row.source} /></td>
-                          <td>{row.sector || "-"}</td>
-                          <td><span className={clsFor(row.qualityTier)}>{row.qualityTier || "-"}</span></td>
-                          <td><span className={holdingCls}>{holdingStatus}</span></td>
-                          <td>{row.currentWeight ? `${row.currentWeight.toFixed(2)}%` : "-"}</td>
-                          <td>{row.finalTargetWeight ? `${row.finalTargetWeight.toFixed(2)}%` : "-"}</td>
-                          <td><span className={gapCls}>{gapStr}</span></td>
-                          <td>
-                            <span className={`badge ${signalCls === "good" ? "dividend" : signalCls === "blue" ? "growth" : "other"}`} style={signal === "REDUCE" || signal === "EXCLUDE" ? {background:"#2a0d12",color:"#ff8aa0"} : undefined}>
-                              {signal}
-                            </span>
-                          </td>
-                          <td style={{maxWidth:260,whiteSpace:"normal",lineHeight:1.4,fontSize:12,color:"#7894ba"}}>{row.reason || "-"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Panel>
-          </>
-        )}
 
       </main>
     </div>
