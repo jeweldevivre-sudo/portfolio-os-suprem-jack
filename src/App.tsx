@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const SCRIPT_URL =
   (process as any).env?.REACT_APP_PREMIUM_SCRIPT_URL ||
-  "https://script.google.com/macros/s/AKfycbygRwn1JEWlx7Jb1s0FBnBpOmulX9ET9kvbZe_A6ZiD6DRHnBA32pAJJKJVCzaRXycaVg/exec";
+  "https://script.google.com/macros/s/AKfycbyumJouB46OnXfTsI9DA3HQI3uC1pdVCzxd_jVnL0cwNYpFcdgCdLsOF5SxFUWH2vSmkA/exec";
 
 const EMPTY_DATA = {
   summary: {},
@@ -170,6 +170,7 @@ function App() {
   const [allocFilter, setAllocFilter] = useState("All");
   const [allocSource, setAllocSource] = useState("All");
   const [dividendGoalDraft, setDividendGoalDraft] = useState("");
+  const [annualDividendGoalDraft, setAnnualDividendGoalDraft] = useState("");
 
   const loadData = async () => {
     try {
@@ -197,6 +198,11 @@ function App() {
         next.dividendGoal?.CurrentAnnualDividend ??
         next.dividendGoal?.currentAnnualDividendGross ??
         next.dividendGoal?.currentAnnualDividend ??
+        ""
+      ));
+      setAnnualDividendGoalDraft(String(
+        next.dividendGoal?.AnnualDividendGoal ??
+        next.dividendGoal?.annualDividendGoal ??
         ""
       ));
     } catch (err: any) {
@@ -671,6 +677,7 @@ function App() {
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
           action: "saveDividendGoal",
+          annualDividendGoal: n(annualDividendGoalDraft),
           currentAnnualDividendGross: n(dividendGoalDraft),
           currentAnnualDividend: n(dividendGoalDraft),
         }),
@@ -1304,6 +1311,14 @@ function App() {
 
                 <div className="dividend-goal-editor">
                   <label className="field">
+                    <span>AnnualDividendGoal</span>
+                    <input
+                      value={annualDividendGoalDraft}
+                      onChange={(e) => setAnnualDividendGoalDraft(e.target.value)}
+                      placeholder="400000"
+                    />
+                  </label>
+                  <label className="field">
                     <span>CurrentAnnualDividendGross</span>
                     <input
                       value={dividendGoalDraft}
@@ -1312,9 +1327,9 @@ function App() {
                     />
                   </label>
                   <button className="primary" disabled={saving} onClick={saveDividendGoal}>
-                    {saving ? "Saving..." : "Save Dividend"}
+                    {saving ? "Saving..." : "Save Dividend Goal"}
                   </button>
-                  <p>Saved to PORTFOLIO PHASE CONFIG!B32</p>
+                  <p>Saved to PORTFOLIO PHASE CONFIG!B31:B32</p>
                 </div>
               </div>
             </Panel>
